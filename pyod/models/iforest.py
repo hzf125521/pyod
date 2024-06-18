@@ -171,7 +171,7 @@ class IForest(BaseDetector):
 				 bootstrap=False,
 				 n_jobs=1,
 				 behaviour='old',
-				 random_state=None,
+				 random_state=10,
 				 verbose=0):
 		super(IForest, self).__init__(contamination=contamination)
 		self.n_estimators = n_estimators
