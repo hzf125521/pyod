@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import division
-from __future__ import print_function
+
 
 import os
 import sys
@@ -80,7 +79,6 @@ class TestLOCI(unittest.TestCase):
         with assert_raises(ValueError):
             self.clf.predict_proba(self.X_test, method='something')
 
-
     def test_prediction_labels_confidence(self):
         pred_labels, confidence = self.clf.predict(self.X_test,
                                                    return_confidence=True)
@@ -99,6 +97,21 @@ class TestLOCI(unittest.TestCase):
         assert_equal(confidence.shape, self.y_test.shape)
         assert (confidence.min() >= 0)
         assert (confidence.max() <= 1)
+
+    def test_prediction_with_rejection(self):
+        pred_labels = self.clf.predict_with_rejection(self.X_test,
+                                                      return_stats=False)
+        assert_equal(pred_labels.shape, self.y_test.shape)
+
+    def test_prediction_with_rejection_stats(self):
+        _, [expected_rejrate, ub_rejrate,
+            ub_cost] = self.clf.predict_with_rejection(self.X_test,
+                                                       return_stats=True)
+        assert (expected_rejrate >= 0)
+        assert (expected_rejrate <= 1)
+        assert (ub_rejrate >= 0)
+        assert (ub_rejrate <= 1)
+        assert (ub_cost >= 0)
 
     def test_fit_predict(self):
         pred_labels = self.clf.fit_predict(self.X_train)

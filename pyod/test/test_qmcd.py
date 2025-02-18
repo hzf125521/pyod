@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import division
-from __future__ import print_function
+
 
 import os
 import sys
@@ -87,14 +86,16 @@ class TestQMCD(unittest.TestCase):
             self.clf.predict_proba(self.X_test, method='something')
 
     def test_prediction_labels_confidence(self):
-        pred_labels, confidence = self.clf.predict(self.X_test, return_confidence=True)
+        pred_labels, confidence = self.clf.predict(self.X_test,
+                                                   return_confidence=True)
         assert_equal(pred_labels.shape, self.y_test.shape)
         assert_equal(confidence.shape, self.y_test.shape)
         assert (confidence.min() >= 0)
         assert (confidence.max() <= 1)
 
     def test_prediction_proba_linear_confidence(self):
-        pred_proba, confidence = self.clf.predict_proba(self.X_test, method='linear',
+        pred_proba, confidence = self.clf.predict_proba(self.X_test,
+                                                        method='linear',
                                                         return_confidence=True)
         assert (pred_proba.min() >= 0)
         assert (pred_proba.max() <= 1)
@@ -103,16 +104,34 @@ class TestQMCD(unittest.TestCase):
         assert (confidence.min() >= 0)
         assert (confidence.max() <= 1)
 
+    def test_prediction_with_rejection(self):
+        pred_labels = self.clf.predict_with_rejection(self.X_test,
+                                                      return_stats=False)
+        assert_equal(pred_labels.shape, self.y_test.shape)
+
+    def test_prediction_with_rejection_stats(self):
+        _, [expected_rejrate, ub_rejrate,
+            ub_cost] = self.clf.predict_with_rejection(self.X_test,
+                                                       return_stats=True)
+        assert (expected_rejrate >= 0)
+        assert (expected_rejrate <= 1)
+        assert (ub_rejrate >= 0)
+        assert (ub_rejrate <= 1)
+        assert (ub_cost >= 0)
+
     def test_fit_predict(self):
         pred_labels = self.clf.fit_predict(self.X_train)
         assert_equal(pred_labels.shape, self.y_train.shape)
 
     def test_fit_predict_score(self):
         self.clf.fit_predict_score(self.X_test, self.y_test)
-        self.clf.fit_predict_score(self.X_test, self.y_test, scoring="roc_auc_score")
-        self.clf.fit_predict_score(self.X_test, self.y_test, scoring="prc_n_score")
+        self.clf.fit_predict_score(self.X_test, self.y_test,
+                                   scoring="roc_auc_score")
+        self.clf.fit_predict_score(self.X_test, self.y_test,
+                                   scoring="prc_n_score")
         with assert_raises(NotImplementedError):
-            self.clf.fit_predict_score(self.X_test, self.y_test, scoring="something")
+            self.clf.fit_predict_score(self.X_test, self.y_test,
+                                       scoring="something")
 
     def test_predict_rank(self):
         pred_scores = self.clf.decision_function(self.X_test)

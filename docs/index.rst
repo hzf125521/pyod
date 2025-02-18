@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to PyOD documentation!
-==============================
+Welcome to PyOD V2 documentation!
+=================================
 
 
 **Deployment & Documentation & Stats & License**
@@ -40,7 +40,7 @@ Welcome to PyOD documentation!
 
 .. image:: https://github.com/yzhao062/pyod/actions/workflows/testing.yml/badge.svg
    :target: https://github.com/yzhao062/pyod/actions/workflows/testing.yml
-   :alt: testing
+   :alt: Testing
 
 
 .. image:: https://coveralls.io/repos/github/yzhao062/pyod/badge.svg
@@ -67,50 +67,44 @@ Welcome to PyOD documentation!
 Read Me First
 ^^^^^^^^^^^^^
 
-Welcome to PyOD, a versatile Python library for detecting anomalies in multivariate data. Whether you're tackling a small-scale project or large datasets, PyOD offers a range of algorithms to suit your needs.
+Welcome to PyOD, a comprehensive but easy-to-use Python library for detecting anomalies in multivariate data. Whether you are working with a small-scale project or large datasets, PyOD provides a range of algorithms to suit your needs.
 
-* **For time-series outlier detection**, please use `TODS <https://github.com/datamllab/tods>`_.
+**PyOD Version 2 is now available** (`Paper <https://www.arxiv.org/abs/2412.12154>`_) :cite:`a-chen2024pyod`, featuring:
 
-* **For graph outlier detection**, please use `PyGOD <https://pygod.org/>`_.
+* **Expanded Deep Learning Support**: Integrates 12 modern neural models into a single PyTorch-based framework, bringing the total number of outlier detection methods to 45.
+* **Enhanced Performance and Ease of Use**: Models are optimized for efficiency and consistent performance across different datasets.
+* **LLM-based Model Selection**: Automated model selection guided by a large language model reduces manual tuning and assists users who may have limited experience with outlier detection.
 
-* **Performance Comparison \& Datasets**: We have a 45-page, the most comprehensive `anomaly detection benchmark paper <https://arxiv.org/pdf/2206.09426>`_. The fully `open-sourced ADBench <https://github.com/Minqi824/ADBench>`_ compares 30 anomaly detection algorithms on 57 benchmark datasets.
+**Additional Resources**:
 
-* **Learn more about anomaly detection** \@ `Anomaly Detection Resources <https://github.com/yzhao062/anomaly-detection-resources>`_
+* **NLP Anomaly Detection**: `NLP-ADBench <https://github.com/USC-FORTIS/NLP-ADBench>`_ provides both NLP anomaly detection datasets and algorithms :cite:`a-li2024nlp`
+* **Time-series Outlier Detection**: `TODS <https://github.com/datamllab/tods>`_
+* **Graph Outlier Detection**: `PyGOD <https://pygod.org/>`_
+* **Performance Comparison & Datasets**: We have a 45-page, comprehensive `anomaly detection benchmark paper <https://openreview.net/forum?id=foA_SFQ9zo0>`_. The fully `open-sourced ADBench <https://github.com/Minqi824/ADBench>`_ compares 30 anomaly detection algorithms on 57 benchmark datasets.
+* **PyOD on Distributed Systems**: You can also run `PyOD on Databricks <https://www.databricks.com/blog/2023/03/13/unsupervised-outlier-detection-databricks.html>`_
+* **Learn More**: `Anomaly Detection Resources <https://github.com/yzhao062/anomaly-detection-resources>`_
 
-* **PyOD on Distributed Systems**: you could also run `PyOD on databricks <https://www.databricks.com/blog/2023/03/13/unsupervised-outlier-detection-databricks.html>`_.
+**Check out our latest research on LLM-based anomaly detection** :cite:`a-yang2024ad`: `AD-LLM: Benchmarking Large Language Models for Anomaly Detection <https://arxiv.org/abs/2412.11142>`_.
 
 ----
 
 About PyOD
 ^^^^^^^^^^
 
-PyOD, established in 2017, has become a go-to **Python library** for **detecting anomalous/outlying objects** in
-multivariate data. This exciting yet challenging field is commonly referred as
-`Outlier Detection <https://en.wikipedia.org/wiki/Anomaly_detection>`_
-or `Anomaly Detection <https://en.wikipedia.org/wiki/Anomaly_detection>`_.
+PyOD, established in 2017, has become a go-to **Python library** for **detecting anomalous/outlying objects** in multivariate data. This exciting yet challenging field is commonly referred to as `Outlier Detection <https://en.wikipedia.org/wiki/Anomaly_detection>`_ or `Anomaly Detection <https://en.wikipedia.org/wiki/Anomaly_detection>`_.
 
-PyOD includes more than 50 detection algorithms, from classical LOF (SIGMOD 2000) to
-the cutting-edge ECOD and DIF (TKDE 2022 and 2023). Since 2017, PyOD has been successfully used in numerous academic researches and
-commercial products with more than `17 million downloads <https://pepy.tech/project/pyod>`_.
-It is also well acknowledged by the machine learning community with various dedicated posts/tutorials, including
-`Analytics Vidhya <https://www.analyticsvidhya.com/blog/2019/02/outlier-detection-python-pyod/>`_,
-`KDnuggets <https://www.kdnuggets.com/2019/02/outlier-detection-methods-cheat-sheet.html>`_, and
-`Towards Data Science <https://towardsdatascience.com/anomaly-detection-for-dummies-15f148e559c1>`_.
-
+PyOD includes more than 50 detection algorithms, from classical LOF (SIGMOD 2000) to the cutting-edge ECOD and DIF (TKDE 2022 and 2023). Since 2017, PyOD has been successfully used in numerous academic research projects and commercial products with more than `26 million downloads <https://pepy.tech/project/pyod>`_. It is also well acknowledged by the machine learning community with various dedicated posts/tutorials, including `Analytics Vidhya <https://www.analyticsvidhya.com/blog/2019/02/outlier-detection-python-pyod/>`_, `KDnuggets <https://www.kdnuggets.com/2019/02/outlier-detection-methods-cheat-sheet.html>`_, and `Towards Data Science <https://towardsdatascience.com/anomaly-detection-for-dummies-15f148e559c1>`_.
 
 **PyOD is featured for**:
 
 * **Unified, User-Friendly Interface** across various algorithms.
-* **Wide Range of Models**\, from classic techniques to the latest deep learning methods.
+* **Wide Range of Models**, from classic techniques to the latest deep learning methods in **PyTorch**.
 * **High Performance & Efficiency**, leveraging `numba <https://github.com/numba/numba>`_ and `joblib <https://github.com/joblib/joblib>`_ for JIT compilation and parallel processing.
 * **Fast Training & Prediction**, achieved through the SUOD framework :cite:`a-zhao2021suod`.
 
-
-**Outlier Detection with 5 Lines of Code**\ :
-
+**Outlier Detection with 5 Lines of Code**:
 
 .. code-block:: python
-
 
     # Example: Training an ECOD detector
     from pyod.models.ecod import ECOD
@@ -119,19 +113,28 @@ It is also well acknowledged by the machine learning community with various dedi
     y_train_scores = clf.decision_scores_  # Outlier scores for training data
     y_test_scores = clf.decision_function(X_test)  # Outlier scores for test data
 
-**Selecting the Right Algorithm:**. Unsure where to start? Consider these robust and interpretable options:
+
+**Selecting the Right Algorithm:** Unsure where to start? Consider these robust and interpretable options:
 
 - `ECOD <https://github.com/yzhao062/pyod/blob/master/examples/ecod_example.py>`_: Example of using ECOD for outlier detection
 - `Isolation Forest <https://github.com/yzhao062/pyod/blob/master/examples/iforest_example.py>`_: Example of using Isolation Forest for outlier detection
 
 Alternatively, explore `MetaOD <https://github.com/yzhao062/MetaOD>`_ for a data-driven approach.
 
-**Citing PyOD**\ :
+**Citing PyOD**:
 
-`PyOD paper <http://www.jmlr.org/papers/volume20/19-011/19-011.pdf>`_ is published in
-`Journal of Machine Learning Research (JMLR) <http://www.jmlr.org/>`_ (MLOSS track).
-If you use PyOD in a scientific publication, we would appreciate
-citations to the following paper::
+If you use PyOD in a scientific publication, we would appreciate citations to the following paper(s):
+
+`PyOD 2: A Python Library for Outlier Detection with LLM-powered Model Selection <https://arxiv.org/abs/2412.12154>`_ is available as a preprint. If you use PyOD in a scientific publication, we would appreciate citations to the following paper::
+
+    @article{zhao2024pyod2,
+        author  = {Chen, Sihan and Qian, Zhuangzhuang and Siu, Wingchun and Hu, Xingcan and Li, Jiaqi and Li, Shawn and Qin, Yuehan and Yang, Tiankai and Xiao, Zhuo and Ye, Wanghao and Zhang, Yichi and Dong, Yushun and Zhao, Yue},
+        title   = {PyOD 2: A Python Library for Outlier Detection with LLM-powered Model Selection},
+        journal = {arXiv preprint arXiv:2412.12154},
+        year    = {2024}
+    }
+
+`PyOD paper <http://www.jmlr.org/papers/volume20/19-011/19-011.pdf>`_ is published in `Journal of Machine Learning Research (JMLR) <http://www.jmlr.org/>`_ (MLOSS track).::
 
     @article{zhao2019pyod,
         author  = {Zhao, Yue and Nasrullah, Zain and Li, Zheng},
@@ -148,8 +151,8 @@ or::
 
     Zhao, Y., Nasrullah, Z. and Li, Z., 2019. PyOD: A Python Toolbox for Scalable Outlier Detection. Journal of machine learning research (JMLR), 20(96), pp.1-7.
 
-For a broader perspective on anomaly detection, see our NeurIPS papers
-`ADBench: Anomaly Detection Benchmark <https://viterbi-web.usc.edu/~yzhao010/papers/22-neurips-adbench.pdf>`_ \& `ADGym: Design Choices for Deep Anomaly Detection <https://viterbi-web.usc.edu/~yzhao010/papers/23-neurips-adgym.pdf>`_::
+
+For a broader perspective on anomaly detection, see our NeurIPS papers `ADBench: Anomaly Detection Benchmark Paper <https://arxiv.org/abs/2206.09426>`_ and `ADGym: Design Choices for Deep Anomaly Detection <https://arxiv.org/abs/2309.15376>`_::
 
     @article{han2022adbench,
         title={Adbench: Anomaly detection benchmark},
@@ -169,11 +172,10 @@ For a broader perspective on anomaly detection, see our NeurIPS papers
     }
 
 
-
 ----
 
 ADBench Benchmark and Datasets
-==============================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We just released a 45-page, the most comprehensive `ADBench: Anomaly Detection Benchmark <https://arxiv.org/abs/2206.09426>`_ :cite:`a-han2022adbench`.
 The fully `open-sourced ADBench <https://github.com/Minqi824/ADBench>`_ compares 30 anomaly detection algorithms on 57 benchmark datasets.
@@ -232,7 +234,7 @@ Proximity-Based      SOD               Subspace Outlier Detection               
 Proximity-Based      ROD               Rotation-based Outlier Detection                                                                        2020   :class:`pyod.models.rod.ROD`                         :cite:`a-almardeny2020novel`
 Outlier Ensembles    IForest           Isolation Forest                                                                                        2008   :class:`pyod.models.iforest.IForest`                 :cite:`a-liu2008isolation,a-liu2012isolation`
 Outlier Ensembles    INNE              Isolation-based Anomaly Detection Using Nearest-Neighbor Ensembles                                      2018   :class:`pyod.models.inne.INNE`                       :cite:`a-bandaragoda2018isolation`
-Outlier Ensembles    DIF               Deep Isolation Forest for Anomaly Detection                                                             2023   :class:`pyod.models.dif.DIF`                         :cite:`a-Xu2023Deep`
+Outlier Ensembles    DIF               Deep Isolation Forest for Anomaly Detection                                                             2023   :class:`pyod.models.dif.DIF`                         :cite:`a-xu2023dif`
 Outlier Ensembles    FB                Feature Bagging                                                                                         2005   :class:`pyod.models.feature_bagging.FeatureBagging`  :cite:`a-lazarevic2005feature`
 Outlier Ensembles    LSCP              LSCP: Locally Selective Combination of Parallel Outlier Ensembles                                       2019   :class:`pyod.models.lscp.LSCP`                       :cite:`a-zhao2019lscp`
 Outlier Ensembles    XGBOD             Extreme Boosting Based Outlier Detection **(Supervised)**                                               2018   :class:`pyod.models.xgbod.XGBOD`                     :cite:`a-zhao2018xgbod`
@@ -245,8 +247,10 @@ Neural Networks      SO_GAAL           Single-Objective Generative Adversarial A
 Neural Networks      MO_GAAL           Multiple-Objective Generative Adversarial Active Learning                                               2019   :class:`pyod.models.mo_gaal.MO_GAAL`                 :cite:`a-liu2019generative`
 Neural Networks      DeepSVDD          Deep One-Class Classification                                                                           2018   :class:`pyod.models.deep_svdd.DeepSVDD`              :cite:`a-ruff2018deepsvdd`
 Neural Networks      AnoGAN            Anomaly Detection with Generative Adversarial Networks                                                  2017   :class:`pyod.models.anogan.AnoGAN`                   :cite:`a-schlegl2017unsupervised`
-Neural Networks      ALAD                Adversarially learned anomaly detection                                                               2018   :class:`pyod.models.alad.ALAD`                       :cite:`a-zenati2018adversarially`
-Graph-based          R-Graph           Outlier detection by R-graph                                                                            2017   :class:`pyod.models.rgraph.RGraph`                   :cite:`you2017provable`
+Neural Networks      ALAD              Adversarially learned anomaly detection                                                                 2018   :class:`pyod.models.alad.ALAD`                       :cite:`a-zenati2018adversarially`
+Neural Networks      DevNet            Deep Anomaly Detection with Deviation Networks                                                          2019   :class:`pyod.models.devnet.DevNet`                   :cite:`a-pang2019deep`
+Neural Networks      AE1SVM            Autoencoder-based One-class Support Vector Machine                                                      2019   :class:`pyod.models.ae1svm.AE1SVM`                   :cite:`a-nguyen2019scalable`
+Graph-based          R-Graph           Outlier detection by R-graph                                                                            2017   :class:`pyod.models.rgraph.RGraph`                   :cite:`a-you2017provable`
 Graph-based          LUNAR             LUNAR: Unifying Local Outlier Detection Methods via Graph Neural Networks                               2022   :class:`pyod.models.lunar.LUNAR`                     :cite:`a-goodge2022lunar`
 ===================  ================  ======================================================================================================  =====  ===================================================  ======================================================
 
@@ -284,18 +288,6 @@ Utility              :func:`pyod.utils.utility.get_label_n`          Turn raw ou
 Utility              :func:`pyod.utils.utility.precision_n_scores`   calculate precision @ rank n
 ===================  ==============================================  =====================================================================================================================================================
 
-**The comparison among of implemented models** is made available below
-(\ `Figure <https://raw.githubusercontent.com/yzhao062/pyod/master/examples/ALL.png>`_\ ,
-`compare_all_models.py <https://github.com/yzhao062/pyod/blob/master/examples/compare_all_models.py>`_\ ,
-`Interactive Jupyter Notebooks <https://mybinder.org/v2/gh/yzhao062/pyod/master>`_\ ).
-For Jupyter Notebooks, please navigate to **"/notebooks/Compare All Models.ipynb"**.
-
-
-.. figure:: figs/ALL.png
-    :alt: Comparison of selected models
-
-Check the latest `benchmark <https://pyod.readthedocs.io/en/latest/benchmark.html>`_. You could replicate this process by running
-`benchmark.py <https://github.com/yzhao062/pyod/blob/master/notebooks/benchmark.py>`_.
 
 
 API Cheatsheet & Reference

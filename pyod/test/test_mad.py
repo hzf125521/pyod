@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import division
-from __future__ import print_function
+
 
 import os
 import sys
@@ -114,6 +113,21 @@ class TestMAD(unittest.TestCase):
         assert (confidence.min() >= 0)
         assert (confidence.max() <= 1)
 
+    def test_prediction_with_rejection(self):
+        pred_labels = self.clf.predict_with_rejection(self.X_test,
+                                                      return_stats=False)
+        assert_equal(pred_labels.shape, self.y_test.shape)
+
+    def test_prediction_with_rejection_stats(self):
+        _, [expected_rejrate, ub_rejrate,
+            ub_cost] = self.clf.predict_with_rejection(self.X_test,
+                                                       return_stats=True)
+        assert (expected_rejrate >= 0)
+        assert (expected_rejrate <= 1)
+        assert (ub_rejrate >= 0)
+        assert (ub_rejrate <= 1)
+        assert (ub_cost >= 0)
+
     def test_fit_predict(self):
         pred_labels = self.clf.fit_predict(self.X_train)
         assert_equal(pred_labels.shape, self.y_train.shape)
@@ -177,7 +191,8 @@ class TestMAD(unittest.TestCase):
 
     def test_predict_rank_normalized_with_nan(self):
         pred_scores = self.clf_nan.decision_function(self.X_test_nan)
-        pred_ranks = self.clf_nan._predict_rank(self.X_test_nan, normalized=True)
+        pred_ranks = self.clf_nan._predict_rank(self.X_test_nan,
+                                                normalized=True)
 
         # assert the order is reserved
         assert_allclose(rankdata(pred_ranks), rankdata(pred_scores), atol=2)
@@ -186,7 +201,8 @@ class TestMAD(unittest.TestCase):
 
     def test_predict_rank_normalized_with_inf(self):
         pred_scores = self.clf_inf.decision_function(self.X_test_inf)
-        pred_ranks = self.clf_inf._predict_rank(self.X_test_inf, normalized=True)
+        pred_ranks = self.clf_inf._predict_rank(self.X_test_inf,
+                                                normalized=True)
 
         # assert the order is reserved
         assert_allclose(rankdata(pred_ranks), rankdata(pred_scores), atol=2)

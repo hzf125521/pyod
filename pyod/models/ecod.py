@@ -2,11 +2,9 @@
 Empirical Cumulative Distribution Functions (ECOD)
 """
 # Author: Zheng Li <jk_zhengli@hotmail.com>
-# Author: Yue Zhao <zhaoy@cmu.edu>
+# Author: Yue Zhao <yzhao062@gmail.com>
 # License: BSD 2 clause
 
-from __future__ import division
-from __future__ import print_function
 
 import warnings
 
@@ -57,7 +55,7 @@ class ECOD(BaseDetector):
     Cumulative Distribution Functions (ECOD)
     ECOD is a parameter-free, highly interpretable outlier detection algorithm
     based on empirical CDF functions.
-    See :cite:`Li2021ecod` for details.
+    See :cite:`li2021ecod` for details.
 
     Parameters
     ----------

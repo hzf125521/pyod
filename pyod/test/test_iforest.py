@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from __future__ import division
-from __future__ import print_function
 
 import os
 import sys
@@ -60,7 +58,6 @@ class TestIForest(unittest.TestCase):
                 self.clf.n_features_in_ is not None)
         assert (hasattr(self.clf, 'offset_') and
                 self.clf.offset_ is not None)
-        
 
     def test_train_scores(self):
         assert_equal(len(self.clf.decision_scores_), self.X_train.shape[0])
@@ -115,6 +112,21 @@ class TestIForest(unittest.TestCase):
         assert_equal(confidence.shape, self.y_test.shape)
         assert (confidence.min() >= 0)
         assert (confidence.max() <= 1)
+
+    def test_prediction_with_rejection(self):
+        pred_labels = self.clf.predict_with_rejection(self.X_test,
+                                                      return_stats=False)
+        assert_equal(pred_labels.shape, self.y_test.shape)
+
+    def test_prediction_with_rejection_stats(self):
+        _, [expected_rejrate, ub_rejrate,
+            ub_cost] = self.clf.predict_with_rejection(self.X_test,
+                                                       return_stats=True)
+        assert (expected_rejrate >= 0)
+        assert (expected_rejrate <= 1)
+        assert (ub_rejrate >= 0)
+        assert (ub_rejrate <= 1)
+        assert (ub_cost >= 0)
 
     def test_fit_predict(self):
         pred_labels = self.clf.fit_predict(self.X_train)
