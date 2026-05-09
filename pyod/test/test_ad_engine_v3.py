@@ -365,5 +365,263 @@ class TestSessionGuardrails(unittest.TestCase):
         assert state.quality is None
 
 
+class TestStabilityMetric:
+    """Regression tests for the stability metric (issue #667)."""
+
+    def _quality(self, scores, labels):
+        """Call the quality function via whichever path is available.
+
+        During PR 1 the helper module does not yet exist; we use the
+        private method on ADEngine. After PR 2 the helper module is
+        importable and we call it directly. This adapter keeps the
+        same test class valid across the PR-1-to-PR-2 transition
+        without violating PR 2's "tests pass without modification" rule.
+        """
+        results = [{'scores_train': scores, 'labels_train': labels}]
+        consensus = {'agreement': 0.5}
+        try:
+            from pyod.utils._quality_metrics import compute_quality
+        except ImportError:
+            engine = ADEngine()
+            return engine._compute_quality(
+                scores, labels, results, consensus)
+        return compute_quality(scores, labels, results, consensus)
+
+    def test_stability_responds_to_data(self):
+        """Large cutoff gaps score higher than nearly tied boundaries."""
+        scores_clean = np.concatenate([
+            np.full(100, 10.0),
+            np.full(900, 0.0),
+        ])
+        labels_clean = np.zeros(1000, dtype=int)
+        labels_clean[:100] = 1
+        quality_clean = self._quality(scores_clean, labels_clean)
+
+        scores_borderline = np.concatenate([
+            np.linspace(2.0, 1.01, 100),
+            np.array([1.009]),
+            np.linspace(0.0, -1.0, 899),
+        ])
+        labels_borderline = np.zeros(1000, dtype=int)
+        labels_borderline[:100] = 1
+        quality_blurry = self._quality(scores_borderline, labels_borderline)
+
+        assert quality_clean['stability'] == 1.0
+        assert quality_blurry['stability'] < 0.01
+        assert quality_clean['stability'] > quality_blurry['stability']
+
+    def test_stability_is_deterministic(self):
+        """Same input produces same output across calls."""
+        rng = np.random.RandomState(42)
+        scores = rng.randn(500)
+        labels = (scores > np.quantile(scores, 0.9)).astype(int)
+        q1 = self._quality(scores, labels)
+        q2 = self._quality(scores, labels)
+        assert q1['stability'] == q2['stability']
+        assert q1['separation'] == q2['separation']
+
+    def test_stability_zero_for_no_anomalies(self):
+        """n_anomalies=0 returns stability=0.0."""
+        scores = np.random.RandomState(0).randn(100)
+        labels = np.zeros(100, dtype=int)
+        assert self._quality(scores, labels)['stability'] == 0.0
+
+    def test_stability_zero_for_all_anomalies(self):
+        """n_anomalies=n returns stability=0.0."""
+        scores = np.random.RandomState(0).randn(100)
+        labels = np.ones(100, dtype=int)
+        assert self._quality(scores, labels)['stability'] == 0.0
+
+    def test_stability_zero_for_constant_scores(self):
+        """All-equal scores produce stability=0.0 (std is 0)."""
+        scores = np.full(100, 0.5)
+        labels = np.zeros(100, dtype=int)
+        labels[:10] = 1
+        assert self._quality(scores, labels)['stability'] == 0.0
+
+    def test_stability_zero_for_nonfinite_scores(self):
+        """NaN or Inf in scores returns 0; never emit NaN."""
+        labels = np.zeros(5, dtype=int)
+        labels[:2] = 1
+        for bad_value in (np.nan, np.inf, -np.inf):
+            scores = np.array([5.0, 4.0, bad_value, 1.0, 0.0])
+            q = self._quality(scores, labels)
+            assert q['stability'] == 0.0
+            assert np.isfinite(q['overall'])
+
+    def test_stability_k_equals_one(self):
+        """k=1 is well-defined: gap between highest score and second-highest."""
+        scores = np.array([5.0, 3.0, 2.0, 1.0, 0.5])
+        labels = np.array([1, 0, 0, 0, 0])
+        q = self._quality(scores, labels)
+        expected = min(1.0, (5.0 - 3.0) / float(scores.std()))
+        assert abs(q['stability'] - expected) < 1e-9
+
+    def test_stability_k_equals_n_minus_one(self):
+        """k=n-1 is well-defined: only one inlier."""
+        scores = np.array([5.0, 4.0, 3.0, 2.0, 0.0])
+        labels = np.array([1, 1, 1, 1, 0])
+        q = self._quality(scores, labels)
+        expected = min(1.0, (2.0 - 0.0) / float(scores.std()))
+        assert abs(q['stability'] - expected) < 1e-9
+
+    def test_stability_ties_at_boundary(self):
+        """Tied scores at the cutoff produce gap=0 -> stability=0."""
+        scores = np.array([5.0, 4.0, 3.0, 3.0, 1.0])
+        labels = np.array([1, 1, 1, 0, 0])
+        q = self._quality(scores, labels)
+        assert q['stability'] == 0.0
+
+    def test_stability_scale_invariant(self):
+        """Multiplying scores by a positive constant leaves stability unchanged."""
+        scores = np.array([5.0, 3.0, 2.0, 1.0, 0.5])
+        labels = np.array([1, 0, 0, 0, 0])
+        q1 = self._quality(scores, labels)
+        q2 = self._quality(scores * 1e6, labels)
+        q3 = self._quality(scores * 1e-12, labels)
+        assert abs(q1['stability'] - q2['stability']) < 1e-9
+        assert abs(q1['stability'] - q3['stability']) < 1e-9
+
+    def test_stability_in_unit_interval(self):
+        """Stability is always in [0, 1] across random inputs."""
+        rng = np.random.RandomState(7)
+        for _ in range(50):
+            n = rng.randint(20, 500)
+            scores = rng.randn(n)
+            k = rng.randint(1, n - 1)
+            threshold = np.partition(scores, -k)[-k]
+            labels = (scores >= threshold).astype(int)
+            q = self._quality(scores, labels)
+            assert 0.0 <= q['stability'] <= 1.0
+
+
+class TestValidateStructuredFeedback:
+    """Tests for the structured-feedback schema validator (PR 3)."""
+
+    def test_missing_action_raises(self):
+        from pyod.utils._nl_feedback import validate_structured_feedback
+        import pytest
+        with pytest.raises(ValueError, match="missing 'action'"):
+            validate_structured_feedback({})
+
+    def test_unknown_action_raises(self):
+        from pyod.utils._nl_feedback import validate_structured_feedback
+        import pytest
+        with pytest.raises(ValueError, match='unknown action'):
+            validate_structured_feedback({'action': 'frobnicate'})
+
+    def test_missing_required_field_raises(self):
+        from pyod.utils._nl_feedback import validate_structured_feedback
+        import pytest
+        with pytest.raises(ValueError, match='requires fields'):
+            validate_structured_feedback({'action': 'adjust_contamination'})
+
+    def test_wrong_type_raises(self):
+        from pyod.utils._nl_feedback import validate_structured_feedback
+        import pytest
+        with pytest.raises(ValueError, match='must be a dict'):
+            validate_structured_feedback('rerun')
+
+    def test_valid_inputs_do_not_raise(self):
+        from pyod.utils._nl_feedback import validate_structured_feedback
+        validate_structured_feedback({'action': 'rerun'})
+        validate_structured_feedback({'action': 'adjust_contamination',
+                                       'value': 0.1})
+        validate_structured_feedback({'action': 'exclude',
+                                       'detectors': ['IForest']})
+        validate_structured_feedback({'action': 'include',
+                                       'detectors': ['ECOD', 'KNN']})
+
+
+class TestNLPatternTable:
+    """Tests for the declarative NL pattern table (PR 3)."""
+
+    def _state_with_results(self, detector_names):
+        """Build a minimal state-like object for the parser."""
+        state = InvestigationState(phase='detected',
+                                   data=np.zeros((10, 3)),
+                                   profile={'data_type': 'tabular'})
+        state.plans = [{'params': {'contamination': 0.1}}]
+        state.results = [{'detector_name': name} for name in detector_names]
+        return state
+
+    def test_exclude_pattern_with_known_detector(self):
+        from pyod.utils._nl_feedback import parse_nl_to_structured
+        state = self._state_with_results(['IForest', 'KNN'])
+        proposed, conf = parse_nl_to_structured(state, 'exclude IForest')
+        assert proposed == {'action': 'exclude', 'detectors': ['IForest']}
+        assert conf == 0.9
+
+    def test_exclude_pattern_without_named_detector(self):
+        from pyod.utils._nl_feedback import parse_nl_to_structured
+        state = self._state_with_results([])
+        proposed, conf = parse_nl_to_structured(state, 'exclude something')
+        assert proposed == {'action': 'exclude', 'detectors': []}
+        assert conf == 0.3
+
+    def test_too_many_decreases_contamination(self):
+        from pyod.utils._nl_feedback import parse_nl_to_structured
+        state = self._state_with_results([])
+        proposed, conf = parse_nl_to_structured(state, 'too many false positives')
+        assert proposed['action'] == 'adjust_contamination'
+        assert proposed['value'] == 0.05
+        assert conf == 0.7
+
+    def test_missed_increases_contamination(self):
+        from pyod.utils._nl_feedback import parse_nl_to_structured
+        state = self._state_with_results([])
+        proposed, conf = parse_nl_to_structured(state, 'we missed several')
+        assert proposed['action'] == 'adjust_contamination'
+        assert abs(proposed['value'] - 0.15) < 1e-9
+        assert conf == 0.7
+
+    def test_rerun_pattern(self):
+        from pyod.utils._nl_feedback import parse_nl_to_structured
+        state = self._state_with_results([])
+        proposed, conf = parse_nl_to_structured(state, 'rerun please')
+        assert proposed == {'action': 'rerun'}
+        assert conf == 0.9
+
+    def test_word_boundary_no_match(self):
+        """Words containing 'without' as substring should NOT match."""
+        from pyod.utils._nl_feedback import parse_nl_to_structured
+        state = self._state_with_results([])
+        proposed, conf = parse_nl_to_structured(state, 'withoutdoubt this is wrong')
+        # Should fall through to default rerun with confidence 0.0
+        assert proposed == {'action': 'rerun'}
+        assert conf == 0.0
+
+    def test_no_match_returns_low_confidence(self):
+        from pyod.utils._nl_feedback import parse_nl_to_structured
+        state = self._state_with_results([])
+        proposed, conf = parse_nl_to_structured(state, 'completely unrelated text')
+        assert proposed == {'action': 'rerun'}
+        assert conf == 0.0
+
+
+class TestExceptionLogging:
+    """Tests for WARNING logs on caught detector exceptions (PR 3)."""
+
+    def test_run_logs_warning_on_detector_error(self, caplog):
+        """ADEngine.run() emits a WARNING log when a detector raises."""
+        import logging
+        engine = ADEngine()
+        rng = np.random.RandomState(0)
+        state = engine.start(rng.rand(50, 3))
+        state = engine.plan(state)
+        # Inject a bogus plan that will fail at run_detection
+        state.plans = [{
+            'detector_name': '__bogus_nonexistent__',
+            'params': {},
+            'priority': 'balanced',
+        }]
+        with caplog.at_level(logging.WARNING, logger='pyod.utils.ad_engine'):
+            state = engine.run(state)
+        assert any('__bogus_nonexistent__' in r.message
+                   for r in caplog.records), \
+            ('expected WARNING with bogus detector name, got: %r'
+             % [r.message for r in caplog.records])
+
+
 if __name__ == '__main__':
     unittest.main()
