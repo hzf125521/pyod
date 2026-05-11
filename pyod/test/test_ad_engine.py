@@ -151,6 +151,66 @@ class TestPlanDetection(unittest.TestCase):
                 f"Unexpected key '{key}' in plan"
 
 
+class TestPlanDetectionContamination(unittest.TestCase):
+    """TA2: plan_detection always exposes the effective contamination in
+    `params` so the MCP `plan_detection` -> `build_detector` chain emits
+    a code snippet that names the value an MCP-only agent would actually
+    run with."""
+
+    def setUp(self):
+        self.engine = ADEngine()
+
+    def test_primary_plan_includes_contamination_for_iforest(self):
+        # Routing rule for medium-tabular returns IForest with empty
+        # params; contamination must be filled from KB defaults.
+        profile = {'data_type': 'tabular', 'n_samples': 5000,
+                   'n_features': 50, 'dimensionality_class': 'medium'}
+        plan = self.engine.plan_detection(profile)
+        assert 'contamination' in plan['params'], \
+            "primary plan params must include contamination (TA2)"
+        assert plan['params']['contamination'] == 0.1
+
+    def test_alternatives_include_contamination(self):
+        profile = {'data_type': 'tabular', 'n_samples': 5000,
+                   'n_features': 50, 'dimensionality_class': 'medium'}
+        plan = self.engine.plan_detection(profile)
+        for alt in plan['alternatives']:
+            if alt.get('detector_name'):
+                assert 'contamination' in alt['params'], \
+                    f"alt {alt['detector_name']} missing contamination"
+
+    def test_fallback_plan_includes_contamination(self):
+        # Force the routing-fallback path: profile that no rule matches.
+        profile = {'data_type': 'tabular', 'n_samples': 50,
+                   'n_features': 3, 'dimensionality_class': 'low'}
+        plan = self.engine.plan_detection(
+            profile,
+            constraints={'exclude_detectors': [
+                'IForest', 'KNN', 'LOF', 'CBLOF']})
+        if plan.get('detector_name'):  # may be empty if everything excluded
+            assert 'contamination' in plan['params'], \
+                "fallback plan params must include contamination (TA2)"
+
+    def test_user_supplied_contamination_is_preserved(self):
+        # Only the routing layer needs to backfill; if a rule (or a
+        # caller through structured feedback) ever sets contamination
+        # explicitly, the fix must not overwrite it.
+        engine = ADEngine()
+        # Simulate by calling _with_contamination directly with an
+        # explicit value.
+        params = engine._with_contamination(
+            'IForest', {'contamination': 0.25})
+        assert params['contamination'] == 0.25
+
+    def test_detectors_without_kb_contamination_left_unchanged(self):
+        # Conservative behavior: if KB has no contamination default,
+        # do not invent one. Pick a detector_name that does not exist
+        # so kb.get_algorithm returns None.
+        engine = ADEngine()
+        params = engine._with_contamination('NotADetector', {})
+        assert 'contamination' not in params
+
+
 class TestBuildDetector(unittest.TestCase):
     def setUp(self):
         self.engine = ADEngine()

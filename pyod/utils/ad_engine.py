@@ -151,6 +151,31 @@ class ADEngine:
                 return False
         return True
 
+    def _with_contamination(self, detector_name: str,
+                            params: dict) -> dict:
+        """Ensure plan params expose an explicit contamination value (TA2).
+
+        The MCP `plan_detection` -> `build_detector` chain serializes the
+        plan to JSON. When `params` does not include `contamination`, the
+        emitted code snippet inherits the detector class's own default,
+        which is invisible to MCP-only agents. Always include a value
+        sourced from the KB `default_params` when the KB confirms the
+        detector accepts a `contamination` kwarg; otherwise leave params
+        unchanged so we do not paper over detectors that use a different
+        threshold mechanism.
+        """
+        if 'contamination' in params:
+            return dict(params)
+        algo = self.kb.get_algorithm(detector_name)
+        if algo is None:
+            return dict(params)
+        kb_default = algo.get('default_params', {}).get('contamination')
+        if kb_default is None:
+            return dict(params)
+        out = dict(params)
+        out['contamination'] = kb_default
+        return out
+
     def plan_detection(self, profile: dict, priority: str = 'balanced',
                        constraints: dict | None = None) -> dict:
         """Plan a detection pipeline.
@@ -208,7 +233,8 @@ class ADEngine:
                     note='no_valid_plan')
 
             return make_plan(
-                detector_name=fallback_name, params={},
+                detector_name=fallback_name,
+                params=self._with_contamination(fallback_name, {}),
                 reason='Fallback: no routing rule matched or all '
                        'candidates excluded',
                 evidence=['ADBench'], confidence=0.5,
@@ -217,7 +243,8 @@ class ADEngine:
         best = valid[0]
         alternatives = [make_plan(
             detector_name=r['detector'],
-            params=r.get('params', {}),
+            params=self._with_contamination(
+                r['detector'], r.get('params', {})),
             preset=r.get('preset'),
             reason=r.get('_reason', ''),
             evidence=r.get('_evidence', []),
@@ -226,7 +253,8 @@ class ADEngine:
 
         return make_plan(
             detector_name=best['detector'],
-            params=best.get('params', {}),
+            params=self._with_contamination(
+                best['detector'], best.get('params', {})),
             preset=best.get('preset'),
             reason=best.get('_reason', ''),
             evidence=best.get('_evidence', []),
@@ -1184,10 +1212,96 @@ class ADEngine:
             raise ValueError("Unknown detector '%s'" % name)
         return {'name': name, **algo}
 
+    # Maps a data_type to (benchmark name, ranking key) for
+    # `compare_detectors` when the KB benchmark's top-level ranking
+    # already uses PyOD detector names (e.g., ADBench `overall_top_5`).
+    _COMPARE_BENCHMARK_RANKINGS: dict[str, tuple[str, str]] = {
+        'tabular': ('ADBench', 'overall_top_5'),
+    }
+
+    # Maps a data_type to benchmark-rank keys stored on each shipped
+    # detector's `benchmark_rank` metadata. Used when the benchmark's
+    # top-level ranking lists paper method names that do not match the
+    # PyOD detector names (e.g., TSB-AD lists "POLY", "KShapeAD", which
+    # do not match the shipped `KShape`, `MatrixProfile`, etc.). Lower
+    # rank value = better. When a detector carries multiple matching
+    # keys, the minimum (best) rank wins.
+    _COMPARE_BENCHMARK_RANK_KEYS: dict[str, tuple[str, ...]] = {
+        'time_series': ('TSB_AD_overall', 'TSB_AD_overall_iforest'),
+    }
+
+    def _benchmark_ranked_detectors(self, data_type: str,
+                                    top_k: int) -> list[str] | None:
+        """Return up to `top_k` shipped detector names for `data_type`,
+        ranked by the modality-specific benchmark from the KB.
+
+        Two ranking sources are consulted in order. First, when
+        `_COMPARE_BENCHMARK_RANKINGS` lists the data_type, use the
+        benchmark's top-level overall ranking and filter to shipped
+        detectors. Second, when `_COMPARE_BENCHMARK_RANK_KEYS` lists
+        the data_type, read each shipped detector's `benchmark_rank`
+        metadata and sort ascending by best rank. In both modes,
+        detectors without an applicable rank are appended in catalog
+        order to fill `top_k`. Returns `None` when no applicable
+        ranking exists, signalling the caller to fall back to catalog
+        order. Used by `compare_detectors` (TA1).
+        """
+        bench_lookup = self._COMPARE_BENCHMARK_RANKINGS.get(data_type)
+        if bench_lookup is not None:
+            bench_name, ranking_key = bench_lookup
+            bench = self.kb.benchmarks.get(bench_name)
+            if not bench:
+                return None
+            ranked = bench.get('rankings', {}).get(ranking_key, [])
+            if not ranked:
+                return None
+            shipped_dicts = self.list_detectors(data_type=data_type)
+            shipped_set = {d['name'] for d in shipped_dicts}
+            ranked_shipped = [n for n in ranked if n in shipped_set]
+            if not ranked_shipped:
+                return None
+            remaining = [d['name'] for d in shipped_dicts
+                         if d['name'] not in ranked_shipped]
+            return (ranked_shipped + remaining)[:top_k]
+
+        rank_keys = self._COMPARE_BENCHMARK_RANK_KEYS.get(data_type)
+        if rank_keys is None:
+            return None
+        shipped_dicts = self.list_detectors(data_type=data_type)
+        ranked_pairs: list[tuple[int, str]] = []
+        unranked: list[str] = []
+        for detector in shipped_dicts:
+            ranks = detector.get('benchmark_rank', {})
+            values = [ranks[key] for key in rank_keys if key in ranks]
+            if values:
+                ranked_pairs.append((min(values), detector['name']))
+            else:
+                unranked.append(detector['name'])
+        if not ranked_pairs:
+            return None
+        ranked_names = [name for _, name in sorted(ranked_pairs)]
+        return (ranked_names + unranked)[:top_k]
+
     def compare_detectors(self, names: list[str] | None = None,
                           data_type: str | None = None,
                           top_k: int = 3) -> list[dict]:
         """Compare detectors.
+
+        When `names` is provided, returns explanations for those
+        detectors in input order.
+
+        When `names` is omitted and `data_type` has a benchmark-backed
+        ranking in the KB, returns up to `top_k` detectors ranked by
+        that benchmark, then appends remaining shipped detectors in
+        catalog order until `top_k` is reached. Two ranking sources are
+        supported: top-level `overall_top_5` for benchmarks whose names
+        match PyOD detector names (currently `tabular` via ADBench);
+        per-detector `benchmark_rank` metadata when the benchmark lists
+        paper method names (currently `time_series` via TSB-AD, sorted
+        ascending by the best matching rank key). For modalities
+        without an applicable ranking (`graph`, `text`, `image`,
+        `multimodal`) or when no `data_type` is given, falls back to
+        the catalog order from `list_detectors`.
 
         Parameters
         ----------
@@ -1204,6 +1318,10 @@ class ADEngine:
         """
         if names:
             return [self.explain_detector(n) for n in names]
+        if data_type:
+            ranked = self._benchmark_ranked_detectors(data_type, top_k)
+            if ranked is not None:
+                return [self.explain_detector(n) for n in ranked]
         detectors = self.list_detectors(data_type=data_type)
         return detectors[:top_k]
 
