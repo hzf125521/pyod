@@ -23,6 +23,23 @@ For modality-specific decision tables and worked snippets, see the per-modality 
    ├── Check escalation trigger 6 (heavy detector + small data)
    └── If trigger fires → escalate
 4. Run: engine.run(state)
+   ├── Inspect state.next_action['action']
+   │   ├── 'recover_detector_failure' → some planned detectors failed
+   │   │     (state.next_action['failed_detectors'] lists them, and
+   │   │     state.next_action['suggested_replacements'] lists candidate
+   │   │     substitutes from the planner). Either:
+   │   │     (a) engine.iterate(state, {'action': 'recover'}) → replaces
+   │   │         failed slots with the suggested substitutes, resets
+   │   │         phase to 'planned', and loops back to step 4.
+   │   │         Pass {'action': 'recover', 'detectors': [...]} to
+   │   │         override the suggestions.
+   │   │     (b) call engine.analyze(state) directly to proceed with
+   │   │         the surviving detectors and add a caveat in the report.
+   │   ├── 'confirm_with_user' → all detectors failed; present
+   │   │     state.next_action['reason'] and ask the user what to do
+   │   │     (typically: re-plan with a different family or check the
+   │   │     data format).
+   │   └── 'analyze' → proceed to step 5.
 5. Analyze: engine.analyze(state)
    ├── Check escalation triggers 3, 4, 10
    └── If trigger fires → escalate or hedge in report

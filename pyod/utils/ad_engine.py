@@ -875,6 +875,7 @@ class ADEngine:
 
         # Compute consensus from successful detectors
         successful = [r for r in results if r['status'] == 'success']
+        failed = [r for r in results if r['status'] == 'error']
         state.consensus = compute_consensus(successful)
 
         if state.consensus is None:
@@ -883,6 +884,30 @@ class ADEngine:
                 'reason': 'All %d detectors failed. Check data format '
                           'or try a different detector family.'
                           % len(results),
+            }
+        elif failed:
+            failed_names = [r['detector_name'] for r in failed]
+            successful_names = [r['detector_name'] for r in successful]
+            substitutes = self._suggest_substitutes(
+                state.profile,
+                exclude=failed_names + successful_names,
+                n_needed=len(failed_names))
+            state.next_action = {
+                'action': 'recover_detector_failure',
+                'reason': '%d/%d detectors failed (%s); consensus '
+                          'currently uses %d detector(s).'
+                          % (len(failed_names), len(results),
+                             ', '.join(failed_names),
+                             state.consensus['n_detectors']),
+                'failed_detectors': failed_names,
+                'suggested_replacements': substitutes,
+                'suggestion': "iterate(state, {'action': 'recover'}) "
+                              "to substitute failed detectors with %s, "
+                              "or call analyze(state) to proceed with the "
+                              "%d successful detector(s)."
+                              % (substitutes if substitutes
+                                 else '<no substitutes available>',
+                                 state.consensus['n_detectors']),
             }
         elif state.consensus['n_detectors'] == 1:
             state.next_action = {
@@ -902,6 +927,37 @@ class ADEngine:
             '%d/%d detectors succeeded'
             % (len(successful), len(results))))
         return state
+
+    def _suggest_substitutes(self, profile: dict, exclude: list,
+                             n_needed: int) -> list:
+        """Suggest substitute detector names for failed slots.
+
+        Calls ``plan_detection`` with ``exclude_detectors`` set to the
+        union of failed and already-running detector names, then takes
+        the top ``n_needed`` names from ``best + alternatives``. Best
+        effort: returns ``[]`` if planning raises or yields no
+        candidates.
+        """
+        if n_needed <= 0:
+            return []
+        try:
+            plan = self.plan_detection(
+                profile,
+                constraints={'exclude_detectors': list(exclude)})
+        except Exception as exc:
+            logger.warning(
+                'plan_detection failed during substitute '
+                'suggestion with %s: %s',
+                type(exc).__name__, exc)
+            return []
+        candidates = []
+        if plan and plan.get('detector_name'):
+            candidates.append(plan['detector_name'])
+        for alt in plan.get('alternatives', []) if plan else []:
+            name = alt.get('detector_name')
+            if name and name not in candidates:
+                candidates.append(name)
+        return candidates[:n_needed]
 
     def analyze(self, state: InvestigationState) -> InvestigationState:
         """Analyze detection results with quality assessment.
@@ -1048,6 +1104,11 @@ class ADEngine:
         parsed with confidence; ambiguous feedback triggers
         ``'confirm_with_user'``.
 
+        Most actions require phase ``'analyzed'``. The ``'recover'``
+        action also accepts phase ``'detected'`` so the agent can
+        substitute failed detectors immediately after ``run()``
+        without first calling ``analyze()``.
+
         Parameters
         ----------
         state : InvestigationState
@@ -1057,7 +1118,15 @@ class ADEngine:
         -------
         state : InvestigationState
         """
-        self._require_phase(state, 'analyzed')
+        action = feedback.get('action') if isinstance(feedback, dict) else None
+        if action == 'recover':
+            if state.phase not in ('detected', 'analyzed'):
+                raise ValueError(
+                    "Recover requires phase 'detected' or "
+                    "'analyzed', got '%s'. Call run() first."
+                    % state.phase)
+        else:
+            self._require_phase(state, 'analyzed')
         if isinstance(feedback, dict):
             return apply_structured_feedback(
                 state, feedback, self.kb, self.plan_detection, make_plan)
