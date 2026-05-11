@@ -53,7 +53,7 @@ Python Outlier Detection (PyOD) 3
 
 -----
 
-    **PyOD is now agentic.** Any AI agent can drive an expert-level anomaly detection investigation on your data in plain English. The classic ``fit``/``predict`` API stays unchanged.
+    **PyOD is agent-ready.** Claude Code and Codex can use the ``od-expert`` skill to drive ADEngine investigations, while MCP-compatible agents can query PyOD's detector knowledge and planning tools. The classic ``fit``/``predict`` API stays unchanged.
 
 -----
 
@@ -64,7 +64,7 @@ Pillar                       What it means
 ===========================  ========================================================================================
 Multi-Modal                  60+ detectors across **tabular, time series, graph, text, and image** data, one API
 Full Lifecycle               From raw data to explained anomalies and next-step guidance in a single call
-Agentic                      Ask in plain English, and AI agents run expert-level detection without OD expertise
+Agentic                      ``od-expert`` turns natural-language requests into ADEngine workflows; MCP exposes structured tools for other agents
 Most Used                    38+ million downloads; benchmark-backed routing (ADBench, TSB-AD, BOND, NLP-ADBench)
 ===========================  ========================================================================================
 
@@ -122,7 +122,7 @@ Layer      Name                   When to use                                   
 3          Agentic Investigation  You want an AI agent to drive OD through natural conversation           `Layer 3 walkthrough <https://pyod.readthedocs.io/en/latest/examples/agentic.html>`__
 =========  =====================  ======================================================================  =======================================
 
-Layers 2 and 3 are powered by ``ADEngine``, PyOD's intelligent orchestration core. Layer 3 adds two agentic activation paths: the ``od-expert`` skill for Claude Code and Codex, and an MCP server (``python -m pyod.mcp_server``) that works with any MCP-compatible LLM out of the box. See the Install block above for detailed setup instructions.
+Layers 2 and 3 are powered by ``ADEngine``, PyOD's intelligent orchestration core. The full multi-turn Layer 3 investigation flow is available through the ``od-expert`` skill for Claude Code and Codex. The MCP server (``python -m pyod.mcp_server``) currently exposes detector knowledge, data profiling, planning, and detector-construction metadata for MCP-compatible LLMs; stateful ``investigate`` / ``iterate`` MCP tools are deferred.
 
 .. image:: https://raw.githubusercontent.com/yzhao062/pyod/development/docs/figs/agentic-demo.png
    :alt: PyOD 3 agentic investigation demo on cardiotocography dataset
