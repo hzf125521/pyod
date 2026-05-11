@@ -22,6 +22,7 @@ from pyod.utils._quality_metrics import (
     compute_feature_importance,
     compute_quality,
     feature_contributions,
+    label_metrics,
     select_best_detector,
 )
 from pyod.utils._kb_router import (
@@ -450,7 +451,9 @@ class ADEngine:
 
     def explain_findings(self, result: dict,
                          indices: list[int] | None = None,
-                         top_k: int = 5, X: Any = None) -> list[dict]:
+                         top_k: int = 5, X: Any = None,
+                         feature_names: list[str] | None = None
+                         ) -> list[dict]:
         """Explain why specific samples were flagged as anomalies.
 
         Parameters
@@ -463,10 +466,20 @@ class ADEngine:
             Number of top anomalies to explain if indices is None.
         X : array-like or None
             Original data for feature-level explanations.
+        feature_names : list of str or None
+            Optional feature labels in column order, threaded through
+            to ``feature_contributions`` so each contributing feature
+            has a human-readable name. When omitted, names default to
+            ``f'feature_{column_index}'``.
 
         Returns
         -------
         explanations : list of dict
+            Each entry has ``'index'``, ``'score'``, ``'percentile'``,
+            ``'label'``, ``'narrative'``. When ``X`` is provided, also
+            includes ``'contributing_features'``: a list of dicts with
+            ``'feature'``, ``'name'``, ``'value'``, ``'mean'``,
+            ``'z_score'``, and ``'direction'``.
         """
         top_k = max(0, int(top_k))
         scores = result['scores_train']
@@ -506,7 +519,8 @@ class ADEngine:
             }
 
             if X is not None:
-                contribs = feature_contributions(X, idx, scores)
+                contribs = feature_contributions(
+                    X, idx, scores, feature_names=feature_names)
                 if contribs is not None:
                     entry['contributing_features'] = contribs
 
@@ -1251,6 +1265,116 @@ class ADEngine:
             diagnostics['threshold_sweep'] = sweep_results
 
         return diagnostics
+
+    # ------------------------------------------------------------------
+    # Hindsight validation (O8)
+    # ------------------------------------------------------------------
+
+    def validate(self,
+                 state: InvestigationState,
+                 y: Any) -> dict:
+        """Hindsight validation of consensus and per-detector results.
+
+        Computes label-based metrics from `y` against the consensus
+        labels and each successful detector, plus a
+        consensus-vs-best-detector diagnostic so the agent can see
+        whether consensus actually helped.
+
+        Pure functional; does not mutate state. Use after `analyze`
+        when held-out labels become available (e.g., a labeled cohort
+        opened post-hoc for hindsight evaluation). For routine
+        unsupervised detection runs, this method is unnecessary.
+
+        Parameters
+        ----------
+        state : InvestigationState
+            Must be in the 'analyzed' phase.
+        y : array-like, shape (n_samples,)
+            Held-out binary labels (0 = inlier, 1 = anomaly). Length
+            must match the consensus.
+
+        Returns
+        -------
+        validation : dict
+            Keys:
+
+            - ``consensus`` (dict): label_metrics for the consensus
+              labels and scores.
+            - ``per_detector`` (dict[str, dict]): label_metrics per
+              successful detector, keyed by detector name.
+            - ``best_detector`` (dict or None): label_metrics for the
+              detector picked by `analyze` as best (or None when
+              `state.analysis` does not name one).
+            - ``consensus_vs_best`` (dict): comparison summary with
+              keys ``consensus_f1``, ``best_detector_f1`` (or None),
+              and ``consensus_helped`` (True if consensus F1 is at
+              least the best-detector F1; None when no best detector).
+            - ``false_positives`` (list[int]): row indices flagged by
+              consensus but inlier in `y`.
+            - ``false_negatives`` (list[int]): row indices not flagged
+              by consensus but anomaly in `y`.
+
+        Raises
+        ------
+        ValueError
+            If `state` is not in 'analyzed' phase, if the consensus is
+            missing (all detectors failed), or if `len(y)` does not
+            match the consensus length.
+        """
+        self._require_phase(state, 'analyzed')
+        if state.consensus is None:
+            raise ValueError(
+                "Cannot validate: state.consensus is None (all "
+                "detectors failed). Use iterate() to recover first.")
+
+        y_arr = np.asarray(y).astype(int)
+        consensus_labels = state.consensus['labels']
+        consensus_scores = state.consensus['scores']
+        n = len(consensus_labels)
+        if len(y_arr) != n:
+            raise ValueError(
+                f"y has {len(y_arr)} samples but the consensus has "
+                f"{n}; lengths must match.")
+
+        consensus_metrics = label_metrics(
+            y_arr, consensus_labels, consensus_scores)
+
+        fp_indices = np.where(
+            (consensus_labels == 1) & (y_arr == 0))[0].tolist()
+        fn_indices = np.where(
+            (consensus_labels == 0) & (y_arr == 1))[0].tolist()
+
+        per_detector: dict[str, dict] = {}
+        for r in state.results:
+            if r.get('status') == 'success':
+                per_detector[r['detector_name']] = label_metrics(
+                    y_arr, r['labels_train'], r['scores_train'])
+
+        best_metrics = None
+        if state.analysis and 'best_detector' in state.analysis:
+            best_name = state.analysis['best_detector']
+            best_metrics = per_detector.get(best_name)
+
+        if best_metrics is not None:
+            consensus_helped = (
+                consensus_metrics['f1'] >= best_metrics['f1'])
+            best_f1 = best_metrics['f1']
+        else:
+            consensus_helped = None
+            best_f1 = None
+
+        return {
+            'consensus': consensus_metrics,
+            'per_detector': per_detector,
+            'best_detector': best_metrics,
+            'consensus_vs_best': {
+                'consensus_f1': consensus_metrics['f1'],
+                'best_detector_f1': best_f1,
+                'consensus_helped': consensus_helped,
+            },
+            'false_positives': [int(i) for i in fp_indices],
+            'false_negatives': [int(i) for i in fn_indices],
+        }
 
     def investigate(self, X: Any, data_type: str | None = None,
                     priority: str = 'balanced') -> InvestigationState:
