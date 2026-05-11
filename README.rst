@@ -122,7 +122,7 @@ Layer      Name                   When to use                                   
 3          Agentic Investigation  You want an AI agent to drive OD through natural conversation           `Layer 3 walkthrough <https://pyod.readthedocs.io/en/latest/examples/agentic.html>`__
 =========  =====================  ======================================================================  =======================================
 
-Layers 2 and 3 are powered by ``ADEngine``, PyOD's intelligent orchestration core. The full multi-turn Layer 3 investigation flow is available through the ``od-expert`` skill for Claude Code and Codex. The MCP server (``python -m pyod.mcp_server``) currently exposes detector knowledge, data profiling, planning, and detector-construction metadata for MCP-compatible LLMs; stateful ``investigate`` / ``iterate`` MCP tools are deferred.
+Layers 2 and 3 are powered by ``ADEngine``, PyOD's intelligent orchestration core. The full multi-turn Layer 3 investigation flow is available through the ``od-expert`` skill for Claude Code and Codex. The MCP server (``python -m pyod.mcp_server``) exposes ten stateless tools for MCP-compatible LLMs, spanning knowledge queries (``list_detectors``, ``explain_detector``, ``compare_detectors``, ``get_benchmarks``), planning (``profile_data``, ``plan_detection``, ``build_detector``), and detection (``run_detection``, ``analyze_results``, ``explain_findings``); stateful ``investigate`` / ``iterate`` MCP tools are deferred.
 
 .. image:: https://raw.githubusercontent.com/yzhao062/pyod/development/docs/figs/agentic-demo.png
    :alt: PyOD 3 agentic investigation demo on cardiotocography dataset
