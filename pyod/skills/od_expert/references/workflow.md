@@ -23,6 +23,23 @@ For modality-specific decision tables and worked snippets, see the per-modality 
    ├── Check escalation trigger 6 (heavy detector + small data)
    └── If trigger fires → escalate
 4. Run: engine.run(state)
+   ├── Inspect state.next_action['action']
+   │   ├── 'recover_detector_failure' → some planned detectors failed
+   │   │     (state.next_action['failed_detectors'] lists them, and
+   │   │     state.next_action['suggested_replacements'] lists candidate
+   │   │     substitutes from the planner). Either:
+   │   │     (a) engine.iterate(state, {'action': 'recover'}) → replaces
+   │   │         failed slots with the suggested substitutes, resets
+   │   │         phase to 'planned', and loops back to step 4.
+   │   │         Pass {'action': 'recover', 'detectors': [...]} to
+   │   │         override the suggestions.
+   │   │     (b) call engine.analyze(state) directly to proceed with
+   │   │         the surviving detectors and add a caveat in the report.
+   │   ├── 'confirm_with_user' → all detectors failed; present
+   │   │     state.next_action['reason'] and ask the user what to do
+   │   │     (typically: re-plan with a different family or check the
+   │   │     data format).
+   │   └── 'analyze' → proceed to step 5.
 5. Analyze: engine.analyze(state)
    ├── Check escalation triggers 3, 4, 10
    └── If trigger fires → escalate or hedge in report
@@ -49,7 +66,7 @@ When a trigger fires, the agent pauses and asks the user. These phrasings are in
 
 ### Trigger 2: Contamination uncertainty
 
-> "Anomaly detection needs an estimate of how many points are unusual (the contamination rate). The default is 10%, but that's often wrong by a wide margin. If you have a sense of the actual rate (from domain knowledge or a labeled sample), tell me. Otherwise I'll run with the default and show you the flagged fraction in `state.analysis['consensus_analysis']['anomaly_ratio']` — you can adjust from there via `engine.iterate(state, {'action': 'adjust_contamination', 'value': <rate>})`."
+> "Anomaly detection needs an estimate of how many points are unusual (the contamination rate). The default is 10%, but that's often wrong by a wide margin. If you have a sense of the actual rate (from domain knowledge or a labeled sample), tell me. Otherwise I'll run with the default and report the flagged fraction in `state.analysis['consensus_analysis']['anomaly_ratio']`. After analyze, call `engine.contamination_diagnostics(state, threshold_sweep=[0.05, 0.1, 0.2, 0.3])` to see the effective contamination, the actual flagged rate, score percentiles, and what each candidate rate would flag; then adjust via `engine.iterate(state, {'action': 'adjust_contamination', 'value': <rate>})`. The diagnostic helper does not estimate the rate for you, by design."
 
 ### Trigger 3: Detector disagreement post-run
 
@@ -57,7 +74,7 @@ When a trigger fires, the agent pauses and asks the user. These phrasings are in
 
 ### Trigger 4: Quality assessment weak
 
-> "The quality of the result is low: separation = [X], stability = [Y]. The detection is essentially noise at these levels. Two options: (1) iterate with a different detector mix, or (2) accept that this dataset may not have clear anomalies. I'll iterate unless you say 'report'."
+> "Quality diagnostics fired: separation = [X], stability = [Y]. These measure two different things and have different remedies. Low separation (< 0.1) means the detectors did not produce a usable ranking; recommended action is to iterate with a different detector mix. Low stability (< 0.5) means the cutoff is fragile (many scores tied near the threshold) but the ranking itself may still be useful; recommended action is `engine.iterate(state, {'action': 'adjust_contamination', 'value': <rate>})`. If both metrics are low, treat as the separation case first because adjusting the cutoff cannot fix a noisy ranking. I'll iterate accordingly unless you say 'report'."
 
 ### Trigger 5: Labels mentioned but not provided
 

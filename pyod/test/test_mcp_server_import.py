@@ -94,12 +94,18 @@ def test_check_mcp_handles_missing_parent_package():
     assert "OK" in result.stdout
 
 
-def test_main_registers_all_seven_tools_in_order(monkeypatch):
-    """Positive-path test: main() registers the 7 canonical tools in order.
+def test_main_registers_all_ten_tools_in_order(monkeypatch):
+    """Positive-path test: main() registers the 10 canonical tools in order.
 
     Uses a fake FastMCP class that records every callable passed through
     `mcp.tool()(fn)` and asserts the full registration sequence. Also
     verifies mcp.run() is invoked exactly once.
+
+    The order matters: Tier-A knowledge/planning tools come first
+    (profile_data, plan_detection, build_detector, list_detectors,
+    explain_detector, compare_detectors, get_benchmarks), then the
+    stateless Tier-B detection tools (run_detection, analyze_results,
+    explain_findings).
     """
     import pyod.mcp_server as m
 
@@ -132,4 +138,162 @@ def test_main_registers_all_seven_tools_in_order(monkeypatch):
         "explain_detector",
         "compare_detectors",
         "get_benchmarks",
+        "run_detection",
+        "analyze_results",
+        "explain_findings",
     ]
+
+
+# ----------------------------------------------------------------------
+# JSON contract tests for the stateless Tier-B tools
+#
+# These tests call the Python tool functions directly (the same
+# callables that ``main()`` would register with FastMCP), so they do
+# not require the optional ``mcp`` extra. The contract under test is
+# the JSON response shape that an MCP client would receive.
+# ----------------------------------------------------------------------
+
+
+def _write_npy(tmp_path, name, arr):
+    import numpy as np
+    p = tmp_path / name
+    np.save(str(p), arr)
+    return str(p)
+
+
+def _make_data(tmp_path, n_samples=120, n_features=5, seed=0):
+    import numpy as np
+    rng = np.random.RandomState(seed)
+    X = rng.randn(n_samples, n_features)
+    return _write_npy(tmp_path, 'X.npy', X)
+
+
+def _plan_via_mcp(data_path):
+    """Drive profile_data + plan_detection through the MCP layer."""
+    import pyod.mcp_server as m
+    profile = m.profile_data(data_path, data_type='tabular')
+    return m.plan_detection(profile, priority='balanced')
+
+
+def test_run_detection_returns_serializable_result(tmp_path):
+    """run_detection JSON omits detector and lists numpy arrays."""
+    import json
+    import pyod.mcp_server as m
+    data_path = _make_data(tmp_path)
+    plan = _plan_via_mcp(data_path)
+    result = m.run_detection(data_path, plan)
+    out = json.loads(result)
+    assert 'detector' not in out
+    assert 'scores_train' in out
+    assert isinstance(out['scores_train'], list)
+    assert 'labels_train' in out
+    assert isinstance(out['labels_train'], list)
+    assert isinstance(out['threshold'], (int, float))
+    assert isinstance(out['n_anomalies'], int)
+    assert 'plan' in out
+
+
+def test_run_detection_invalid_plan_returns_error(tmp_path):
+    import json
+    import pyod.mcp_server as m
+    data_path = _make_data(tmp_path)
+    out = json.loads(m.run_detection(data_path, "not-json"))
+    assert 'error' in out
+
+
+def test_analyze_results_round_trips_run_detection(tmp_path):
+    """analyze_results accepts run_detection JSON and returns analysis."""
+    import json
+    import pyod.mcp_server as m
+    data_path = _make_data(tmp_path)
+    plan = _plan_via_mcp(data_path)
+    result = m.run_detection(data_path, plan)
+    analysis = json.loads(m.analyze_results(result, top_k=3))
+    assert 'n_anomalies' in analysis
+    assert 'anomaly_ratio' in analysis
+    assert 'score_distribution' in analysis
+    assert 'top_anomalies' in analysis
+    assert len(analysis['top_anomalies']) == 3
+    assert 'summary' in analysis
+
+
+def test_analyze_results_invalid_result_returns_error():
+    import json
+    import pyod.mcp_server as m
+    out = json.loads(m.analyze_results("not-json"))
+    assert 'error' in out
+
+
+def test_explain_findings_round_trips_run_detection(tmp_path):
+    """explain_findings accepts run_detection JSON and returns rows."""
+    import json
+    import pyod.mcp_server as m
+    data_path = _make_data(tmp_path)
+    plan = _plan_via_mcp(data_path)
+    result = m.run_detection(data_path, plan)
+    explanations = json.loads(m.explain_findings(result, top_k=3))
+    assert isinstance(explanations, list)
+    assert len(explanations) == 3
+    for entry in explanations:
+        assert 'index' in entry
+        assert 'score' in entry
+        assert 'percentile' in entry
+        assert 'label' in entry
+        assert 'narrative' in entry
+
+
+def test_explain_findings_with_explicit_indices(tmp_path):
+    import json
+    import pyod.mcp_server as m
+    data_path = _make_data(tmp_path)
+    plan = _plan_via_mcp(data_path)
+    result = m.run_detection(data_path, plan)
+    explanations = json.loads(
+        m.explain_findings(result, indices='0,5,12'))
+    indices = [e['index'] for e in explanations]
+    assert indices == [0, 5, 12]
+
+
+def test_explain_findings_invalid_result_returns_error():
+    import json
+    import pyod.mcp_server as m
+    out = json.loads(m.explain_findings("not-json"))
+    assert 'error' in out
+
+
+def test_explain_findings_invalid_indices_returns_error(tmp_path):
+    import json
+    import pyod.mcp_server as m
+    data_path = _make_data(tmp_path)
+    plan = _plan_via_mcp(data_path)
+    result = m.run_detection(data_path, plan)
+    out = json.loads(m.explain_findings(result, indices='a,b,c'))
+    assert 'error' in out
+
+
+def test_analyze_results_malformed_arrays_returns_error():
+    """Valid JSON object with non-numeric array contents must not raise."""
+    import json
+    import pyod.mcp_server as m
+    bad = json.dumps({
+        'scores_train': ['not-a-number'],
+        'labels_train': [0],
+        'threshold': 0.5,
+        'plan': {'detector_name': 'IForest'},
+    })
+    out = json.loads(m.analyze_results(bad))
+    assert 'error' in out
+
+
+def test_explain_findings_malformed_arrays_returns_error():
+    """Valid JSON object with non-numeric array contents must not raise."""
+    import json
+    import pyod.mcp_server as m
+    bad = json.dumps({
+        'scores_train': ['not-a-number'],
+        'labels_train': [0],
+        'threshold': 0.5,
+        'plan': {'detector_name': 'IForest'},
+    })
+    out = json.loads(m.explain_findings(bad))
+    assert 'error' in out

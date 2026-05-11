@@ -28,8 +28,15 @@ class TestReadmeRST(unittest.TestCase):
             content = f.read()
 
         parser = docutils.parsers.rst.Parser()
-        settings = docutils.frontend.get_default_settings(
-            docutils.parsers.rst.Parser)
+        if hasattr(docutils.frontend, 'get_default_settings'):
+            # docutils >= 0.19
+            settings = docutils.frontend.get_default_settings(
+                docutils.parsers.rst.Parser)
+        else:
+            # docutils < 0.19 (OptionParser path)
+            settings = docutils.frontend.OptionParser(
+                components=(docutils.parsers.rst.Parser,)
+            ).get_default_values()
         doc = docutils.utils.new_document('README.rst', settings)
         parser.parse(content, doc)
 

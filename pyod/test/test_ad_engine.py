@@ -151,6 +151,66 @@ class TestPlanDetection(unittest.TestCase):
                 f"Unexpected key '{key}' in plan"
 
 
+class TestPlanDetectionContamination(unittest.TestCase):
+    """TA2: plan_detection always exposes the effective contamination in
+    `params` so the MCP `plan_detection` -> `build_detector` chain emits
+    a code snippet that names the value an MCP-only agent would actually
+    run with."""
+
+    def setUp(self):
+        self.engine = ADEngine()
+
+    def test_primary_plan_includes_contamination_for_iforest(self):
+        # Routing rule for medium-tabular returns IForest with empty
+        # params; contamination must be filled from KB defaults.
+        profile = {'data_type': 'tabular', 'n_samples': 5000,
+                   'n_features': 50, 'dimensionality_class': 'medium'}
+        plan = self.engine.plan_detection(profile)
+        assert 'contamination' in plan['params'], \
+            "primary plan params must include contamination (TA2)"
+        assert plan['params']['contamination'] == 0.1
+
+    def test_alternatives_include_contamination(self):
+        profile = {'data_type': 'tabular', 'n_samples': 5000,
+                   'n_features': 50, 'dimensionality_class': 'medium'}
+        plan = self.engine.plan_detection(profile)
+        for alt in plan['alternatives']:
+            if alt.get('detector_name'):
+                assert 'contamination' in alt['params'], \
+                    f"alt {alt['detector_name']} missing contamination"
+
+    def test_fallback_plan_includes_contamination(self):
+        # Force the routing-fallback path: profile that no rule matches.
+        profile = {'data_type': 'tabular', 'n_samples': 50,
+                   'n_features': 3, 'dimensionality_class': 'low'}
+        plan = self.engine.plan_detection(
+            profile,
+            constraints={'exclude_detectors': [
+                'IForest', 'KNN', 'LOF', 'CBLOF']})
+        if plan.get('detector_name'):  # may be empty if everything excluded
+            assert 'contamination' in plan['params'], \
+                "fallback plan params must include contamination (TA2)"
+
+    def test_user_supplied_contamination_is_preserved(self):
+        # Only the routing layer needs to backfill; if a rule (or a
+        # caller through structured feedback) ever sets contamination
+        # explicitly, the fix must not overwrite it.
+        engine = ADEngine()
+        # Simulate by calling _with_contamination directly with an
+        # explicit value.
+        params = engine._with_contamination(
+            'IForest', {'contamination': 0.25})
+        assert params['contamination'] == 0.25
+
+    def test_detectors_without_kb_contamination_left_unchanged(self):
+        # Conservative behavior: if KB has no contamination default,
+        # do not invent one. Pick a detector_name that does not exist
+        # so kb.get_algorithm returns None.
+        engine = ADEngine()
+        params = engine._with_contamination('NotADetector', {})
+        assert 'contamination' not in params
+
+
 class TestBuildDetector(unittest.TestCase):
     def setUp(self):
         self.engine = ADEngine()
@@ -407,6 +467,74 @@ class TestExplainFindings(unittest.TestCase):
         assert len(explanations) == 2
         assert explanations[0]['index'] == 0
         assert explanations[1]['index'] == 5
+
+    # ----- O9: enriched contributing_features -----
+
+    def test_contributing_features_have_enriched_keys(self):
+        explanations = self.engine.explain_findings(
+            self.result, X=self.X_train, top_k=2)
+        for entry in explanations:
+            for cf in entry.get('contributing_features', []):
+                assert {'feature', 'name', 'value', 'mean',
+                        'z_score', 'direction'} <= set(cf.keys())
+                assert cf['direction'] in ('high', 'low')
+
+    def test_contributing_features_use_provided_names(self):
+        names = [f'col_{i}' for i in range(self.X_train.shape[1])]
+        explanations = self.engine.explain_findings(
+            self.result, X=self.X_train, top_k=1,
+            feature_names=names)
+        for cf in explanations[0].get('contributing_features', []):
+            assert cf['name'].startswith('col_')
+
+    def test_contributing_features_default_name(self):
+        explanations = self.engine.explain_findings(
+            self.result, X=self.X_train, top_k=1)
+        for cf in explanations[0].get('contributing_features', []):
+            assert cf['name'].startswith('feature_')
+
+    def test_direction_high_when_value_above_mean(self):
+        rng = np.random.RandomState(0)
+        X = np.zeros((100, 3))
+        X[:, 0] = rng.randn(100)
+        X[5, 0] = 10.0  # extreme positive
+        scores = np.zeros(100)
+        scores[5] = 1.0
+        result = {'scores_train': scores, 'threshold': 0.5}
+        explanations = self.engine.explain_findings(
+            result, indices=[5], X=X)
+        cf_top = explanations[0]['contributing_features'][0]
+        assert cf_top['feature'] == 0
+        assert cf_top['direction'] == 'high'
+
+    def test_direction_low_when_value_below_mean(self):
+        rng = np.random.RandomState(0)
+        X = np.zeros((100, 3))
+        X[:, 1] = rng.randn(100)
+        X[5, 1] = -10.0  # extreme negative
+        scores = np.zeros(100)
+        scores[5] = 1.0
+        result = {'scores_train': scores, 'threshold': 0.5}
+        explanations = self.engine.explain_findings(
+            result, indices=[5], X=X)
+        cf_top = explanations[0]['contributing_features'][0]
+        assert cf_top['feature'] == 1
+        assert cf_top['direction'] == 'low'
+
+    def test_value_and_mean_match_input(self):
+        # Sanity check: value and mean should match what the input
+        # actually contains, not be invented numbers.
+        rng = np.random.RandomState(7)
+        X = rng.randn(100, 4)
+        scores = np.zeros(100)
+        scores[10] = 1.0
+        result = {'scores_train': scores, 'threshold': 0.5}
+        explanations = self.engine.explain_findings(
+            result, indices=[10], X=X)
+        for cf in explanations[0]['contributing_features']:
+            f = cf['feature']
+            assert abs(cf['value'] - float(X[10, f])) < 1e-9
+            assert abs(cf['mean'] - float(np.mean(X[:, f]))) < 1e-9
 
 
 class TestSuggestNextStep(unittest.TestCase):
