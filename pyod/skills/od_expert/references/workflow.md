@@ -49,7 +49,7 @@ When a trigger fires, the agent pauses and asks the user. These phrasings are in
 
 ### Trigger 2: Contamination uncertainty
 
-> "Anomaly detection needs an estimate of how many points are unusual (the contamination rate). The default is 10%, but that's often wrong by a wide margin. If you have a sense of the actual rate (from domain knowledge or a labeled sample), tell me. Otherwise I'll run with the default and show you the flagged fraction in `state.analysis['consensus_analysis']['anomaly_ratio']` — you can adjust from there via `engine.iterate(state, {'action': 'adjust_contamination', 'value': <rate>})`."
+> "Anomaly detection needs an estimate of how many points are unusual (the contamination rate). The default is 10%, but that's often wrong by a wide margin. If you have a sense of the actual rate (from domain knowledge or a labeled sample), tell me. Otherwise I'll run with the default and report the flagged fraction in `state.analysis['consensus_analysis']['anomaly_ratio']`. After analyze, call `engine.contamination_diagnostics(state, threshold_sweep=[0.05, 0.1, 0.2, 0.3])` to see the effective contamination, the actual flagged rate, score percentiles, and what each candidate rate would flag; then adjust via `engine.iterate(state, {'action': 'adjust_contamination', 'value': <rate>})`. The diagnostic helper does not estimate the rate for you, by design."
 
 ### Trigger 3: Detector disagreement post-run
 

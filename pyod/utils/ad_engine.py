@@ -1148,6 +1148,110 @@ class ADEngine:
 
         return '\n'.join(lines)
 
+    # ------------------------------------------------------------------
+    # Contamination diagnostics (O5 narrowed)
+    # ------------------------------------------------------------------
+
+    _CONTAMINATION_DIAGNOSTIC_PERCENTILES: tuple[int, ...] = (
+        50, 75, 90, 95, 99)
+
+    def contamination_diagnostics(
+            self,
+            state: InvestigationState,
+            threshold_sweep: list[float] | None = None) -> dict:
+        """Diagnostic helper for contamination calibration.
+
+        Reports the contamination value the run actually used, the
+        actual flagged rate from the consensus, the score-percentile
+        distribution, and (optionally) a threshold sweep showing what
+        fraction would be flagged at each candidate contamination
+        value. The agent can use these numbers to choose a sensible
+        next contamination before iterating.
+
+        This helper does NOT estimate contamination automatically and
+        does NOT mutate state. It is purely a read-only diagnostic the
+        agent uses to inform a subsequent
+        `engine.iterate(state, {'action': 'adjust_contamination',
+        'value': <rate>})` call.
+
+        Parameters
+        ----------
+        state : InvestigationState
+            Must be in the 'analyzed' phase.
+        threshold_sweep : list of float or None
+            Optional sequence of candidate contamination values in
+            (0, 1). For each value c, the result includes the
+            corresponding threshold (the (1 - c) quantile of consensus
+            scores) and the resulting flagged rate. Use this to preview
+            how the flagged set would change before deciding to
+            iterate. Values outside (0, 1) are skipped.
+
+        Returns
+        -------
+        diagnostics : dict
+            Keys:
+
+            - ``effective_contamination`` (float or None): contamination
+              value from the primary plan's params, or ``None`` if the
+              plan has no contamination set.
+            - ``flagged_rate`` (float): actual fraction flagged by the
+              consensus labels.
+            - ``score_percentiles`` (dict[int, float]): consensus-score
+              percentiles at the 50th, 75th, 90th, 95th, and 99th.
+            - ``threshold_sweep`` (list of dict, optional): present only
+              when ``threshold_sweep`` was passed; each entry has
+              ``contamination``, ``threshold``, and ``flagged_rate``.
+        """
+        self._require_phase(state, 'analyzed')
+
+        primary_plan = state.plans[0] if state.plans else {}
+        effective = primary_plan.get('params', {}).get('contamination')
+
+        if state.consensus is None:
+            diagnostics: dict = {
+                'effective_contamination': effective,
+                'flagged_rate': 0.0,
+                'score_percentiles': {},
+            }
+            if threshold_sweep:
+                diagnostics['threshold_sweep'] = []
+            return diagnostics
+
+        scores = state.consensus['scores']
+        labels = state.consensus['labels']
+        n = len(labels)
+        flagged_rate = float(labels.sum()) / n if n > 0 else 0.0
+
+        score_percentiles = {
+            p: float(np.percentile(scores, p))
+            for p in self._CONTAMINATION_DIAGNOSTIC_PERCENTILES
+        }
+
+        diagnostics = {
+            'effective_contamination': effective,
+            'flagged_rate': flagged_rate,
+            'score_percentiles': score_percentiles,
+        }
+
+        if threshold_sweep:
+            sweep_results = []
+            for c in threshold_sweep:
+                if not (0.0 < c < 1.0):
+                    # Skip invalid candidates rather than raise; this
+                    # is a lenient diagnostic, not a strict validator.
+                    continue
+                threshold = float(np.quantile(scores, 1.0 - c))
+                n_flagged = int((scores > threshold).sum())
+                sweep_results.append({
+                    'contamination': float(c),
+                    'threshold': threshold,
+                    'flagged_rate': (
+                        n_flagged / n if n > 0 else 0.0),
+                })
+            diagnostics['threshold_sweep'] = sweep_results
+
+        return diagnostics
+
     def investigate(self, X: Any, data_type: str | None = None,
                     priority: str = 'balanced') -> InvestigationState:
         """One-shot investigation: start → plan → run → analyze.
