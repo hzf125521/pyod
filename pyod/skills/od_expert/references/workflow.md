@@ -57,7 +57,7 @@ When a trigger fires, the agent pauses and asks the user. These phrasings are in
 
 ### Trigger 4: Quality assessment weak
 
-> "The quality of the result is low: separation = [X], stability = [Y]. The detection is essentially noise at these levels. Two options: (1) iterate with a different detector mix, or (2) accept that this dataset may not have clear anomalies. I'll iterate unless you say 'report'."
+> "Quality diagnostics fired: separation = [X], stability = [Y]. These measure two different things and have different remedies. Low separation (< 0.1) means the detectors did not produce a usable ranking; recommended action is to iterate with a different detector mix. Low stability (< 0.5) means the cutoff is fragile (many scores tied near the threshold) but the ranking itself may still be useful; recommended action is `engine.iterate(state, {'action': 'adjust_contamination', 'value': <rate>})`. If both metrics are low, treat as the separation case first because adjusting the cutoff cannot fix a noisy ranking. I'll iterate accordingly unless you say 'report'."
 
 ### Trigger 5: Labels mentioned but not provided
 
