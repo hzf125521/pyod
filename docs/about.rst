@@ -95,3 +95,20 @@ Bourne Li (MS student @ USC):
 
 - Joined 2024 (implemented Pytorch version of algorithms)
 - `Homepage (Bourne Li) <https://www.linkedin.com/in/bourne-li-a9a899231/>`_
+
+
+Funding
+-------
+
+This material is based upon work supported by the National Science Foundation
+under Award No. `2346158 <https://www.nsf.gov/awardsearch/showAward?AWD_ID=2346158>`_
+for "NSF POSE: Phase II: OpenAD: An Integrated Open-Source Ecosystem for
+Anomaly Detection." The award period is 2024-06-15 to 2027-05-31. The award
+lists Prof. Philip S. Yu as PI and Kai Shu, Lichao Sun, and Yue Zhao as
+co-PIs. The University of Illinois Chicago is the lead organization, with
+Illinois Institute of Technology, Lehigh University, and the University of
+Southern California listed as sub-awardee organizations.
+
+Any opinions, findings, and conclusions or recommendations expressed in this
+material are those of the author(s) and do not necessarily reflect the views
+of the National Science Foundation.

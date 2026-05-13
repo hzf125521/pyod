@@ -737,6 +737,22 @@ More detailed instructions for running examples can be found in `examples direct
 
 ----
 
+Acknowledgments
+^^^^^^^^^^^^^^^
+
+This material is based upon work supported by the National Science Foundation
+under Award No. `2346158 <https://www.nsf.gov/awardsearch/showAward?AWD_ID=2346158>`_
+for "NSF POSE: Phase II: OpenAD: An Integrated Open-Source Ecosystem for
+Anomaly Detection." The award lists the University of Illinois Chicago as the
+lead organization and Illinois Institute of Technology, Lehigh University, and
+the University of Southern California as sub-awardee organizations.
+
+Any opinions, findings, and conclusions or recommendations expressed in this
+material are those of the author(s) and do not necessarily reflect the views
+of the National Science Foundation.
+
+----
+
 Reference
 ^^^^^^^^^
 
