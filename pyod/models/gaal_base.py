@@ -11,7 +11,10 @@ try:
     import torch.nn as nn
     import torch.nn.functional as F
 except ImportError as e:
-    raise ImportError('PyTorch is required for GAAL models. Please install it with `pip install torch`.') from e
+    raise ImportError(
+        "PyTorch is required for GAAL models. Please install it with "
+        "`pip install pyod[torch]` or `pip install torch`."
+    ) from e
 
 
 def create_discriminator(latent_size, data_size):
