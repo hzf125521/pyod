@@ -209,19 +209,23 @@ class TestSODKwargsRejection(unittest.TestCase):
     def test_random_state_rejected_cleanly(self):
         with self.assertRaises(TypeError) as cm:
             SOD(random_state=42)
+        # Key invariant: the error must NOT leak NearestNeighbors. Python
+        # 3.9 omits the class qualifier from the TypeError message, so we
+        # assert the kwarg name instead of the class name to keep the
+        # check meaningful across Python versions.
         msg = str(cm.exception)
-        assert 'SOD' in msg, (
-            "Error must name SOD as the call site; got: %s" % msg)
         assert 'NearestNeighbors' not in msg, (
             "Error must not leak NearestNeighbors implementation detail; "
             "got: %s" % msg)
+        assert 'random_state' in msg, (
+            "Error must name the unexpected kwarg; got: %s" % msg)
 
     def test_unknown_kwarg_rejected_cleanly(self):
         with self.assertRaises(TypeError) as cm:
             SOD(verbose=1)
         msg = str(cm.exception)
-        assert 'SOD' in msg, msg
         assert 'NearestNeighbors' not in msg, msg
+        assert 'verbose' in msg, msg
 
     def test_default_construction_works(self):
         SOD()

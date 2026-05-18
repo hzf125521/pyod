@@ -287,21 +287,24 @@ class TestABODKwargsRejection(unittest.TestCase):
         # silently forwarding it to a layer that does not accept it.
         with self.assertRaises(TypeError) as cm:
             ABOD(random_state=42)
-        # The error MUST point at ABOD (the user's call site), and MUST
-        # NOT leak NearestNeighbors (the pre-fix shape pointed there).
+        # Key invariant: the error must NOT leak NearestNeighbors (the
+        # pre-fix shape pointed there). Python 3.10+ also prefixes the
+        # class name (e.g., "ABOD.__init__()"), but we do not assert that
+        # because Python 3.9 omits the class qualifier; checking the
+        # kwarg name keeps the assertion meaningful across Python versions.
         msg = str(cm.exception)
-        assert 'ABOD' in msg, (
-            "Error must name ABOD as the call site; got: %s" % msg)
         assert 'NearestNeighbors' not in msg, (
             "Error must not leak NearestNeighbors implementation detail; "
             "got: %s" % msg)
+        assert 'random_state' in msg, (
+            "Error must name the unexpected kwarg; got: %s" % msg)
 
     def test_unknown_kwarg_rejected_cleanly(self):
         with self.assertRaises(TypeError) as cm:
             ABOD(verbose=1)
         msg = str(cm.exception)
-        assert 'ABOD' in msg, msg
         assert 'NearestNeighbors' not in msg, msg
+        assert 'verbose' in msg, msg
 
     def test_default_construction_works(self):
         ABOD()
