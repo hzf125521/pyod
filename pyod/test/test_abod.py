@@ -273,5 +273,39 @@ class TestABOD(unittest.TestCase):
         pass
 
 
+class TestABODKwargsRejection(unittest.TestCase):
+    """Regression test for issue #685: ABOD must not forward arbitrary kwargs
+    to sklearn NearestNeighbors. Before the fix, ABOD(random_state=42) crashed
+    at fit time with "NearestNeighbors.__init__() got an unexpected keyword
+    argument 'random_state'". After the fix, unknown kwargs are rejected
+    cleanly at construction.
+    """
+
+    def test_random_state_rejected_cleanly(self):
+        # Caller intent: "give me reproducibility". The detector is
+        # deterministic, so the constructor rejects the kwarg rather than
+        # silently forwarding it to a layer that does not accept it.
+        with self.assertRaises(TypeError) as cm:
+            ABOD(random_state=42)
+        # The error MUST point at ABOD (the user's call site), and MUST
+        # NOT leak NearestNeighbors (the pre-fix shape pointed there).
+        msg = str(cm.exception)
+        assert 'ABOD' in msg, (
+            "Error must name ABOD as the call site; got: %s" % msg)
+        assert 'NearestNeighbors' not in msg, (
+            "Error must not leak NearestNeighbors implementation detail; "
+            "got: %s" % msg)
+
+    def test_unknown_kwarg_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            ABOD(verbose=1)
+        msg = str(cm.exception)
+        assert 'ABOD' in msg, msg
+        assert 'NearestNeighbors' not in msg, msg
+
+    def test_default_construction_works(self):
+        ABOD()
+
+
 if __name__ == '__main__':
     unittest.main()

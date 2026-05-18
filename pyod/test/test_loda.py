@@ -219,5 +219,42 @@ class TestAutoLODA(unittest.TestCase):
         pass
 
 
+class TestLODARandomState(unittest.TestCase):
+    """Regression test for issue #469: LODA results are not reproducible
+    because the constructor did not accept ``random_state`` and the inner
+    ``np.random.randn`` / ``np.random.permutation`` calls fell back to
+    numpy's module-level state. The fix adds ``random_state`` to
+    ``LODA.__init__`` and threads it through both call sites via
+    ``sklearn.utils.check_random_state``.
+    """
+
+    def setUp(self):
+        import numpy as np
+        self.X = np.random.RandomState(42).randn(200, 5)
+
+    def test_same_seed_is_deterministic(self):
+        import numpy as np
+        results = []
+        for _ in range(3):
+            clf = LODA(random_state=42)
+            clf.fit(self.X)
+            results.append(clf.decision_scores_.copy())
+        assert all(np.array_equal(results[0], r) for r in results[1:])
+
+    def test_different_seeds_can_differ(self):
+        import numpy as np
+        c1 = LODA(random_state=1); c1.fit(self.X)
+        c2 = LODA(random_state=2); c2.fit(self.X)
+        # Two different seeds on the same data must not always collide.
+        assert not np.array_equal(c1.decision_scores_, c2.decision_scores_)
+
+    def test_no_seed_unchanged(self):
+        # Sanity: LODA() without random_state still produces a usable fit;
+        # determinism is not asserted to preserve v3.5.1 behavior.
+        clf = LODA()
+        clf.fit(self.X)
+        assert clf.decision_scores_.shape == (self.X.shape[0],)
+
+
 if __name__ == '__main__':
     unittest.main()

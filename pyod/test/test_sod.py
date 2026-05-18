@@ -200,5 +200,32 @@ class TestSODNearestNeighborsConfig(unittest.TestCase):
         assert_equal(pred_scores.shape[0], self.X_test.shape[0])
 
 
+class TestSODKwargsRejection(unittest.TestCase):
+    """Regression test for issue #685: SOD must not forward arbitrary kwargs
+    to sklearn NearestNeighbors. Before the fix, SOD(random_state=42) crashed
+    at fit time. After the fix, unknown kwargs are rejected at construction.
+    """
+
+    def test_random_state_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            SOD(random_state=42)
+        msg = str(cm.exception)
+        assert 'SOD' in msg, (
+            "Error must name SOD as the call site; got: %s" % msg)
+        assert 'NearestNeighbors' not in msg, (
+            "Error must not leak NearestNeighbors implementation detail; "
+            "got: %s" % msg)
+
+    def test_unknown_kwarg_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            SOD(verbose=1)
+        msg = str(cm.exception)
+        assert 'SOD' in msg, msg
+        assert 'NearestNeighbors' not in msg, msg
+
+    def test_default_construction_works(self):
+        SOD()
+
+
 if __name__ == '__main__':
     unittest.main()

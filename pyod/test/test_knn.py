@@ -373,5 +373,33 @@ class TestKnnNearestNeighborsConfig(unittest.TestCase):
         assert_equal(scores.shape[0], self.X_test.shape[0])
 
 
+class TestKNNKwargsRejection(unittest.TestCase):
+    """Regression test for issue #685: KNN must not forward arbitrary kwargs
+    to sklearn NearestNeighbors. Before the fix, KNN(random_state=42) crashed
+    at __init__ time inside NearestNeighbors construction. After the fix,
+    unknown kwargs are rejected cleanly by KNN itself.
+    """
+
+    def test_random_state_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            KNN(random_state=42)
+        msg = str(cm.exception)
+        assert 'KNN' in msg, (
+            "Error must name KNN as the call site; got: %s" % msg)
+        assert 'NearestNeighbors' not in msg, (
+            "Error must not leak NearestNeighbors implementation detail; "
+            "got: %s" % msg)
+
+    def test_unknown_kwarg_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            KNN(verbose=1)
+        msg = str(cm.exception)
+        assert 'KNN' in msg, msg
+        assert 'NearestNeighbors' not in msg, msg
+
+    def test_default_construction_works(self):
+        KNN()
+
+
 if __name__ == '__main__':
     unittest.main()
