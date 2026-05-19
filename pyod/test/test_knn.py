@@ -373,5 +373,38 @@ class TestKnnNearestNeighborsConfig(unittest.TestCase):
         assert_equal(scores.shape[0], self.X_test.shape[0])
 
 
+class TestKNNKwargsRejection(unittest.TestCase):
+    """Regression test for issue #685: KNN must not forward arbitrary kwargs
+    to sklearn NearestNeighbors. Before the fix, KNN(random_state=42) crashed
+    at __init__ time inside NearestNeighbors construction. After the fix,
+    unknown kwargs are rejected cleanly by KNN itself.
+    """
+
+    def test_random_state_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            KNN(random_state=42)
+        # Key invariant: the error must NOT leak NearestNeighbors (the
+        # pre-fix shape constructed NearestNeighbors during KNN.__init__
+        # and crashed there). Python 3.9 omits the class qualifier from
+        # the TypeError message, so we assert the kwarg name instead of
+        # the class name to keep the check meaningful across versions.
+        msg = str(cm.exception)
+        assert 'NearestNeighbors' not in msg, (
+            "Error must not leak NearestNeighbors implementation detail; "
+            "got: %s" % msg)
+        assert 'random_state' in msg, (
+            "Error must name the unexpected kwarg; got: %s" % msg)
+
+    def test_unknown_kwarg_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            KNN(verbose=1)
+        msg = str(cm.exception)
+        assert 'NearestNeighbors' not in msg, msg
+        assert 'verbose' in msg, msg
+
+    def test_default_construction_works(self):
+        KNN()
+
+
 if __name__ == '__main__':
     unittest.main()

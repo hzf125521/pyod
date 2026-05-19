@@ -681,5 +681,214 @@ class TestGenerateReport(unittest.TestCase):
                 self.result, self.analysis, format='pdf')
 
 
+class TestRandomStateDeterminism(unittest.TestCase):
+    """Regression test for issue #686: ADEngine non-determinism on identical input.
+
+    Before the fix, repeated ``ADEngine().investigate(X)`` calls on
+    byte-identical X produced different flagged sets and different
+    ``anomaly_ratio`` values because detectors with stochastic internals
+    (e.g., IForest random subsample) fell back to numpy's module-level
+    random state. The fix wires a ``random_state`` parameter through
+    ``ADEngine.__init__`` to ``build_detector_from_plan``, which injects
+    it into each detector class that declares an explicit ``random_state``
+    parameter.
+    """
+
+    def setUp(self):
+        self.X = np.random.RandomState(42).randn(200, 5)
+
+    def test_investigate_is_deterministic_with_fixed_seed(self):
+        first_labels = None
+        ratios = []
+        for _ in range(5):
+            state = ADEngine(random_state=42).investigate(
+                self.X, data_type='tabular')
+            labels = np.asarray(state.consensus['labels'])
+            ratios.append(
+                state.analysis['consensus_analysis']['anomaly_ratio'])
+            if first_labels is None:
+                first_labels = labels
+            else:
+                assert np.array_equal(labels, first_labels), (
+                    "flagged set drifted across same-seed calls")
+        assert len(set(ratios)) == 1, (
+            "anomaly_ratio drifted across same-seed calls: %s" % ratios)
+
+    def test_different_seeds_can_differ(self):
+        s1 = ADEngine(random_state=1).investigate(
+            self.X, data_type='tabular')
+        s2 = ADEngine(random_state=2).investigate(
+            self.X, data_type='tabular')
+        # We do not assert the flagged sets MUST differ (the data is
+        # well-separated and consensus may agree), but at minimum the
+        # call must succeed for both seeds.
+        assert s1.consensus is not None
+        assert s2.consensus is not None
+
+    def test_default_constructor_unchanged(self):
+        # Backward compatibility: ADEngine() with no seed still works and
+        # returns a usable result (no determinism guarantee, see #686).
+        state = ADEngine().investigate(self.X, data_type='tabular')
+        assert state.consensus is not None
+        assert state.analysis is not None
+
+    def test_engine_seed_flows_to_lunar_plan(self):
+        # LUNAR is a torch-based stochastic detector. Before #686 plus the
+        # LUNAR random_state plumbing, an ADEngine seed was silently dropped
+        # for LUNAR plans because LUNAR did not declare random_state in its
+        # __init__, so _accepts_random_state() returned False. After the fix,
+        # the engine seed reaches LUNAR and same-seed reruns produce
+        # bit-identical flagged sets.
+        plan = {
+            'detector_name': 'LUNAR',
+            'params': {
+                'n_epochs': 2,
+                'n_neighbours': 5,
+                'contamination': 0.1,
+            },
+        }
+        labels = []
+        for _ in range(3):
+            result = ADEngine(random_state=42).run_detection(self.X, plan)
+            labels.append(np.asarray(result['labels_train']))
+        assert all(np.array_equal(labels[0], arr) for arr in labels[1:])
+
+
+class TestRandomStateFactory(unittest.TestCase):
+    """Lower-level regression tests for the factory contract that
+    ``ADEngine.build_detector`` and ``build_detector_from_plan`` use to
+    inject ``random_state`` (issue #686). The output-level
+    TestRandomStateDeterminism above could keep passing if the consensus
+    happens to settle on deterministic detectors while seed injection
+    silently regresses; these tests pin the factory behavior directly.
+    """
+
+    def setUp(self):
+        self.engine = ADEngine(random_state=42)
+
+    def test_seed_is_injected_into_iforest(self):
+        clf = self.engine.build_detector({
+            'detector_name': 'IForest',
+            'params': {},
+        })
+        assert clf.random_state == 42
+
+    def test_plan_level_seed_wins(self):
+        # An explicit plan['params']['random_state'] must override the
+        # engine default. Preserves caller intent (e.g., a per-plan seed
+        # for a multi-fold cross-validation that overrides the global).
+        clf = self.engine.build_detector({
+            'detector_name': 'IForest',
+            'params': {'random_state': 7},
+        })
+        assert clf.random_state == 7
+
+    def test_knn_is_not_given_random_state(self):
+        # KNN does not declare random_state in its __init__ (#685 cleanup).
+        # _accepts_random_state() must refuse to inject and the call must
+        # not raise.
+        clf = self.engine.build_detector({
+            'detector_name': 'KNN',
+            'params': {},
+        })
+        assert not hasattr(clf, 'random_state')
+
+    def test_abod_is_not_given_random_state(self):
+        clf = self.engine.build_detector({
+            'detector_name': 'ABOD',
+            'params': {},
+        })
+        assert not hasattr(clf, 'random_state')
+
+    def test_sod_is_not_given_random_state(self):
+        clf = self.engine.build_detector({
+            'detector_name': 'SOD',
+            'params': {},
+        })
+        assert not hasattr(clf, 'random_state')
+
+    def test_input_plan_not_mutated(self):
+        # build_detector_from_plan does dict(plan['params']) before adding
+        # random_state. The caller's plan must not pick up an unwanted
+        # random_state key after the call.
+        plan = {'detector_name': 'IForest', 'params': {}}
+        _ = self.engine.build_detector(plan)
+        assert 'random_state' not in plan.get('params', {})
+
+    def test_no_seed_when_engine_random_state_is_none(self):
+        # An ADEngine constructed without random_state must not inject one,
+        # preserving v3.5.1 behavior end-to-end.
+        engine = ADEngine()
+        clf = engine.build_detector({
+            'detector_name': 'IForest',
+            'params': {},
+        })
+        # IForest's default random_state is None.
+        assert clf.random_state is None
+
+    def test_seed_propagates_through_embedding_preset(self):
+        # Codex round-2 finding: build_from_preset bypassed the seed
+        # injection because the preset branch returned before random_state
+        # was added to params. EmbeddingOD.for_text() defaults to LUNAR
+        # internally, so an ADEngine seed silently dropped on text routes
+        # before the fix. After the round-2 fix, the engine seed reaches
+        # the preset and the inner LUNAR via build_from_preset -> for_text.
+        clf = ADEngine(random_state=42).build_detector({
+            'detector_name': 'EmbeddingOD',
+            'preset': 'for_text',
+            'params': {'quality': 'balanced'},
+        })
+        assert clf.random_state == 42
+
+    def test_preset_plan_level_seed_wins(self):
+        clf = ADEngine(random_state=42).build_detector({
+            'detector_name': 'EmbeddingOD',
+            'preset': 'for_text',
+            'params': {'quality': 'balanced', 'random_state': 99},
+        })
+        assert clf.random_state == 99
+
+    def test_preset_no_seed_unchanged(self):
+        # An ADEngine constructed without random_state must not inject one
+        # on the preset path either.
+        clf = ADEngine().build_detector({
+            'detector_name': 'EmbeddingOD',
+            'preset': 'for_text',
+            'params': {'quality': 'balanced'},
+        })
+        assert clf.random_state is None
+
+    def test_embedding_preset_seed_reaches_pca_preprocessing(self):
+        # Codex round-3 finding: EmbeddingOD._preprocess_fit constructed
+        # PCA without random_state, so a preset plan with reduce_dim could
+        # still be non-deterministic in the preprocessing step even with
+        # the inner detector seeded. The fix forwards EmbeddingOD's
+        # random_state to PCA. We monkeypatch the PCA constructor so we
+        # do not need to fit a real embedding pipeline in CI.
+        from unittest.mock import patch
+        captured = {}
+
+        class _FakePCA:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+            def fit_transform(self, X):
+                return X[:, :captured.get('n_components', X.shape[1])]
+
+            def transform(self, X):
+                return X[:, :captured.get('n_components', X.shape[1])]
+
+        import pyod.models.embedding as _emb
+        from pyod.models.embedding import EmbeddingOD
+        # Drive the preprocessing branch directly so the test does not
+        # depend on a real encoder.
+        clf = EmbeddingOD(encoder='all-MiniLM-L6-v2', reduce_dim=2,
+                          random_state=42)
+        X_emb = np.random.RandomState(0).randn(20, 8).astype(np.float32)
+        with patch.object(_emb, 'PCA', _FakePCA):
+            clf._preprocess_fit(X_emb)
+        assert captured.get('random_state') == 42
+
+
 if __name__ == '__main__':
     unittest.main()

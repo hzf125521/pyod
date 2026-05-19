@@ -7,6 +7,7 @@ import unittest
 
 import numpy as np
 # noinspection PyProtectedMember
+from numpy.testing import assert_allclose
 from numpy.testing import assert_array_less
 from numpy.testing import assert_equal
 from numpy.testing import assert_raises
@@ -224,6 +225,65 @@ class TestLUNARScalerIsolation(unittest.TestCase):
         assert m1.scaler_ is not m2.scaler_
         out1 = m1.predict(X1)
         assert_equal(out1.shape, (10,))
+
+
+class TestLUNARKwargsAndRandomState(unittest.TestCase):
+    """Regression test for issue #685 (kwargs rejection) and issue #686
+    (LUNAR seeding).
+
+    Before the #685 fix, LUNAR(random_state=42) crashed at fit time
+    because `**kwargs` was forwarded to sklearn NearestNeighbors. Removing
+    `**kwargs` from LUNAR.__init__ closed that surface, but LUNAR is
+    stochastic (train_test_split, np.random in generate_negative_samples,
+    torch network init + SGD), so simply rejecting `random_state` left
+    `ADEngine(random_state=42)` unable to make a LUNAR plan deterministic.
+    The #686 fix adds an explicit `random_state` parameter to LUNAR that
+    threads through torch seeding, the numpy stream, train_test_split,
+    and generate_negative_samples, and the factory now propagates the
+    engine seed to LUNAR plans.
+    """
+
+    def test_unknown_kwarg_rejected_cleanly(self):
+        with self.assertRaises(TypeError) as cm:
+            LUNAR(verbose_flag=1)
+        # Key invariant: the error must NOT leak NearestNeighbors. Python
+        # 3.9 omits the class qualifier from the TypeError message, so we
+        # assert the kwarg name instead of the class name.
+        msg = str(cm.exception)
+        assert 'NearestNeighbors' not in msg, (
+            "Error must not leak NearestNeighbors implementation detail; "
+            "got: %s" % msg)
+        assert 'verbose_flag' in msg, (
+            "Error must name the unexpected kwarg; got: %s" % msg)
+
+    def test_default_construction_works(self):
+        LUNAR()
+
+    def test_random_state_accepts_numpy_random_state_object(self):
+        # sklearn convention: detectors that declare random_state should
+        # accept either int or numpy.random.RandomState. Before the round-2
+        # tightening, LUNAR(random_state=RandomState(42)) failed inside
+        # torch.manual_seed because the seed was not normalized.
+        import numpy as np
+        clf = LUNAR(n_epochs=1, random_state=np.random.RandomState(42))
+        # Fit must run end-to-end without raising.
+        X, _, _, _ = generate_data(
+            n_train=80, n_test=20, n_features=4,
+            contamination=0.1, random_state=42)
+        clf.fit(X)
+        assert clf.decision_scores_.shape == (X.shape[0],)
+
+    def test_random_state_is_accepted_and_deterministic(self):
+        X, _, _, _ = generate_data(
+            n_train=80, n_test=20, n_features=4,
+            contamination=0.1, random_state=42)
+        clf1 = LUNAR(n_epochs=2, random_state=42)
+        clf2 = LUNAR(n_epochs=2, random_state=42)
+        clf1.fit(X)
+        clf2.fit(X)
+        assert_equal(clf1.labels_, clf2.labels_)
+        assert_allclose(clf1.decision_scores_, clf2.decision_scores_,
+                        rtol=1e-6, atol=1e-6)
 
 
 if __name__ == '__main__':
